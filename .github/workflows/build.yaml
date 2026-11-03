@@ -1,0 +1,47 @@
+name: Build extensions
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write            # needed to publish the "extensions" release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Build every extension and make extensions.zip + extensions.txt
+        shell: pwsh
+        run: ./tools/build-extensions.ps1
+
+      - name: Show what will be published
+        shell: pwsh
+        run: |
+          Get-ChildItem dist | Format-Table Name, Length
+          Get-Content dist/extensions.txt
+
+      - name: Publish to the "extensions" release (the fixed release ASD reads)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view extensions 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create extensions --title "ASD extensions" --notes "Files ASD downloads: extensions.txt (small list) and extensions.zip (all extensions). Written by the Build extensions workflow."
+          }
+          # upload the zip first, the list last: when ASD sees the new list the zip is already there
+          gh release upload extensions dist/extensions.zip --clobber
+          gh release upload extensions dist/extensions.txt --clobber
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: extensions
+          path: dist/*
