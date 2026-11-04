@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.Checklist",
+  "name": "Checklist",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "A simple to-do list that is saved between runs.",
+  "assembly": "Checklist.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "\ue73a",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.Pomodoro",
+  "name": "Pomodoro",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Work and break timer. Keeps counting when you leave its page and tells you when a session ends.",
+  "assembly": "Pomodoro.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "\ue916",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

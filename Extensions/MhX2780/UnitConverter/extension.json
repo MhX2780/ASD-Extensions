@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.UnitConverter",
+  "name": "Unit Converter",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Length, weight, temperature, data size, time and speed.",
+  "assembly": "UnitConverter.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "\ue8ef",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.DateCalculator",
+  "name": "Date Calculator",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "The time between two dates, and a date plus or minus some days.",
+  "assembly": "DateCalculator.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "\ue787",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

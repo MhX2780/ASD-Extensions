@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.ColorTools",
+  "name": "Color Tools",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Pick a color with sliders or type a HEX code; see RGB and HSL and copy them.",
+  "assembly": "ColorTools.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "\ue790",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

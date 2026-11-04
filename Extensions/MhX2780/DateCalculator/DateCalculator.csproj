@@ -3,8 +3,8 @@
     <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <AssemblyName>HelloTool</AssemblyName>
-    <RootNamespace>HelloTool</RootNamespace>
+    <AssemblyName>DateCalculator</AssemblyName>
+    <RootNamespace>DateCalculator</RootNamespace>
     <WindowsPackageType>None</WindowsPackageType>
     <EnableMsixTooling>true</EnableMsixTooling>
   </PropertyGroup>

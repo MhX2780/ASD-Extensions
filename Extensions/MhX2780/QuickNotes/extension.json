@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.QuickNotes",
+  "name": "Quick Notes",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Small notes that save themselves in ASD's data folder.",
+  "assembly": "QuickNotes.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "\ue70b",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

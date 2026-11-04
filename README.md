@@ -3,9 +3,9 @@
 Extensions for **ASD**. One folder per extension: `Extensions/<Publisher>/<Name>/`.
 
 ```
-Extensions/MhX2780/HelloTool/
-  HelloTool.csproj        a small class library
-  HelloExtension.cs       implements IAsdExtension (Register adds pages)
+Extensions/MhX2780/Pomodoro/
+  Pomodoro.csproj        a small class library
+  PomodoroExtension.cs      implements IAsdExtension (Register adds pages)
   extension.json          everything ASD needs to know BEFORE the DLL is loaded
   icon.png                (optional) icon for the store list and the install window
   LICENSE.txt             (optional) shown in the install window
@@ -13,6 +13,18 @@ Extensions/MhX2780/HelloTool/
 Shared/ASD.Extensibility/ the contract (interfaces) between ASD and an extension
 tools/build-extensions.ps1 builds everything -> dist/extensions.zip + dist/extensions.txt
 ```
+
+## Extensions in this store
+| Extension | What it does |
+|---|---|
+| Pomodoro | Work/break timer; keeps counting while you use other tools and notifies you |
+| Unit Converter | Length, mass, temperature, data size, time, speed |
+| Color Tools | HEX / RGB / HSL with sliders and a preview; copy buttons |
+| Quick Notes | Notes that save themselves (one .txt file each, in the extension's data folder) |
+| Date Calculator | Time between two dates; a date plus or minus days |
+| Checklist | A to-do list that is saved between runs |
+
+To add one: copy any folder under `Extensions/MhX2780/`, rename it, change `extension.json` (new `id`, `assembly` = the project name) and write your page. The build finds it by itself.
 
 ## How it is published
 Every push to `main` runs **Build extensions** (GitHub Actions). It builds each extension and publishes two files to the fixed release **extensions**:
@@ -46,7 +58,7 @@ ASD reads `extensions.txt` (at most once a day); when something is new or newer 
 
 ## Rules for an extension
 - Build the UI in code (no XAML files).
-- Reference `ASD.Extensibility` and Windows App SDK as compile-only (see HelloTool.csproj) and never ship them.
+- Reference `ASD.Extensibility` and Windows App SDK as compile-only (see Pomodoro.csproj) and never ship them.
 - Create windows and controls on the UI thread.
 - Only add to the contract (IAsdHost), never change or remove a member.
 - An extension runs inside ASD with the same permissions: publish only code you trust.
