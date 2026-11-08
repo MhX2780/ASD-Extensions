@@ -2,9 +2,10 @@ using System.Text.RegularExpressions;
 
 namespace PyScript;
 
+/// <param name="Kind">class, function, variable, keyword, built-in, snippet</param>
 internal sealed record Suggestion(string Label, string Insert, string Kind)
 {
-    public override string ToString() => Label + "    " + Kind;
+    public override string ToString() => Label;
 }
 
 internal sealed record Problem(int Line, int Col, string Message, string Source)
@@ -12,7 +13,7 @@ internal sealed record Problem(int Line, int Col, string Message, string Source)
     public override string ToString() => $"Line {Line}: {Message}   [{Source}]";
 }
 
-/// <summary>What to suggest at the caret: keywords, built-ins, snippets, names used in the file. (Members of a module come from Python itself, see the window.)</summary>
+/// <summary>What to suggest at the caret: names used in the file, snippets, built-ins, keywords. (Members of a module come from Python itself, see the window.)</summary>
 internal static class Complete
 {
     private static readonly string[] Keywords =
@@ -55,20 +56,27 @@ internal static class Complete
         return (prefix, owner);
     }
 
-    public static List<Suggestion> Local(string text, string prefix)
+    /// <param name="all">true = also when nothing is typed yet (Ctrl+Space)</param>
+    public static List<Suggestion> Local(string text, string prefix, bool all = false)
     {
         var result = new List<Suggestion>();
-        if (prefix.Length == 0) return result;
+        if (prefix.Length == 0 && !all) return result;
         bool Match(string s) => s.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && !s.Equals(prefix, StringComparison.Ordinal);
 
+        var classes = new HashSet<string>(Regex.Matches(text, @"^\s*class\s+([A-Za-z_]\w*)", RegexOptions.Multiline).Select(m => m.Groups[1].Value));
+        var functions = new HashSet<string>(Regex.Matches(text, @"^\s*(?:async\s+)?def\s+([A-Za-z_]\w*)", RegexOptions.Multiline).Select(m => m.Groups[1].Value));
+
+        var seen = new HashSet<string>();
+        foreach (System.Text.RegularExpressions.Match m in Regex.Matches(text, "[A-Za-z_][A-Za-z0-9_]*"))
+        {
+            var name = m.Value;
+            if (!Match(name) || !seen.Add(name) || Keywords.Contains(name)) continue;
+            result.Add(new Suggestion(name, name, classes.Contains(name) ? "class" : functions.Contains(name) ? "function" : "variable"));
+        }
         foreach (var s in Snippets)
             if (s.Label.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) result.Add(new Suggestion(s.Label, s.Text, "snippet"));
+        foreach (var b in Builtins) if (Match(b) && seen.Add(b)) result.Add(new Suggestion(b, b, "built-in"));
         foreach (var k in Keywords) if (Match(k)) result.Add(new Suggestion(k, k, "keyword"));
-        foreach (var b in Builtins) if (Match(b)) result.Add(new Suggestion(b, b, "built-in"));
-
-        var seen = new HashSet<string>(result.Select(r => r.Label));
-        foreach (System.Text.RegularExpressions.Match m in Regex.Matches(text, "[A-Za-z_][A-Za-z0-9_]*"))
-            if (Match(m.Value) && seen.Add(m.Value)) result.Add(new Suggestion(m.Value, m.Value, "in this file"));
-        return result.Take(40).ToList();
+        return result.Take(30).ToList();
     }
 }

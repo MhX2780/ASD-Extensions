@@ -15,6 +15,7 @@ internal sealed class AiSettings
     public string CustomName { get; set; } = "";
     public string CustomUrl { get; set; } = "";
     public string CustomStyle { get; set; } = "openai";
+    public bool Inline { get; set; } = true;   // the AI continues the code in faded text while you type
 }
 
 /// <summary>
@@ -147,7 +148,29 @@ internal static class Ai
         prompt.AppendLine().AppendLine("=== CODE ===").AppendLine(code);
         if (problems.Length > 0) prompt.AppendLine().AppendLine("=== PROBLEMS FOUND BY THE CHECKER ===").AppendLine(problems);
         if (runOutput.Length > 0) prompt.AppendLine().AppendLine("=== OUTPUT OF THE LAST RUN ===").AppendLine(runOutput);
-        var text = prompt.ToString();
+        return await AskAsync(provider, model, key, prompt.ToString(), 3000, ct);
+    }
+
+    /// <summary>The code to add at the cursor (up to 10 lines, new lines as '\n'), or an empty text.</summary>
+    public static async Task<string> CompleteAsync(ProviderInfo provider, string model, string key, string before, CancellationToken ct)
+    {
+        if (before.Length > 3000) before = before[^3000..];
+        var prompt = "You complete Python code inside an editor. Continue the code at the cursor. Reply with ONLY the code to insert at the cursor: no explanation, no markdown fences, do not repeat the existing code, at most 8 lines. If nothing sensible can be added, reply with nothing.\n\n=== CODE BEFORE THE CURSOR ===\n" + before;
+        var answer = await AskAsync(provider, model, key, prompt, 400, ct);
+
+        var lines = answer.Replace("\r\n", "\n").Split('\n').ToList();
+        if (lines.Count > 0 && lines[0].TrimStart().StartsWith("```")) lines.RemoveAt(0);
+        var fence = lines.FindLastIndex(l => l.TrimStart().StartsWith("```"));
+        if (fence >= 0) lines = lines.Take(fence).ToList();
+        while (lines.Count > 0 && lines[^1].Trim().Length == 0) lines.RemoveAt(lines.Count - 1);
+        if (lines.Count > 10) lines = lines.Take(10).ToList();
+        return string.Join("\n", lines);
+    }
+
+    private static async Task<string> AskAsync(ProviderInfo provider, string model, string key, string text, int maxTokens, CancellationToken ct)
+    {
+        if (provider.Url.Length == 0) throw new InvalidOperationException("Enter the address of the provider in 'AI settings'.");
+        if (model.Length == 0) throw new InvalidOperationException("Enter a model name in 'AI settings'.");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, UrlFor(provider, model));
         string json;
@@ -156,7 +179,7 @@ internal static class Ai
             case "anthropic":
                 request.Headers.Add("x-api-key", key);
                 request.Headers.Add("anthropic-version", "2023-06-01");
-                json = JsonSerializer.Serialize(new { model, max_tokens = 3000, messages = new[] { new { role = "user", content = text } } });
+                json = JsonSerializer.Serialize(new { model, max_tokens = maxTokens, messages = new[] { new { role = "user", content = text } } });
                 break;
             case "gemini":
                 request.Headers.Add("x-goog-api-key", key);

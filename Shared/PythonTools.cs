@@ -157,14 +157,17 @@ internal sealed class OutputView : Grid
     public void Clear() { _all.Clear(); _text.Inlines.Clear(); }
 
     /// <summary>UI thread only.</summary>
-    public void Add(string line, bool error = false)
+    public void ScrollToTop() => DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _scroll.ChangeView(null, 0, null));
+
+    /// <param name="scroll">false = do not jump to the end (for a long text that is read from the top)</param>
+    public void Add(string line, bool error = false, bool scroll = true)
     {
         _all.Append(line).Append('\n');
         var run = new Run { Text = line + "\n" };
         if (error) run.Foreground = Red;
         _text.Inlines.Add(run);
         if (_text.Inlines.Count > 6000) for (var i = 0; i < 1000; i++) _text.Inlines.RemoveAt(0);
-        if (_scrollQueued) return;
+        if (!scroll || _scrollQueued) return;
         _scrollQueued = true;
         DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
         {
