@@ -28,9 +28,24 @@ internal static class Ai
         new("claude", "Claude (Anthropic)", "anthropic", "https://api.anthropic.com", "claude-sonnet-5-5", "Get a key at console.anthropic.com."),
         new("gemini", "Gemini (Google)", "gemini", "https://generativelanguage.googleapis.com", "gemini-2.5-flash", "Get a key at aistudio.google.com."),
         new("deepseek", "DeepSeek", "openai", "https://api.deepseek.com", "deepseek-chat", "Get a key at platform.deepseek.com."),
-        new("hcnsec", "api.hcnsec.cn", "openai", "https://api.hcnsec.cn/v1", "gpt-4o", "Used as an OpenAI-compatible service: enter a model name that your account on api.hcnsec.cn has."),
+        new("hcnsec", "api.hcnsec.cn", "openai", "https://api.hcnsec.cn/v1", "auto", "A free OpenAI-compatible gateway (GLM, DeepSeek, Qwen, Kimi, Step, MiniMax...). 'auto' lets the service pick the model. Register on api.hcnsec.cn to get a key."),
         new("custom", "Another provider...", "openai", "", "", "Enter the address of any service, how it is spoken to, and a model name."),
     };
+
+    // model names offered in the box (the person can type any other). The api.hcnsec.cn list was read from its public model list in Oct-Nov 2026.
+    private static readonly Dictionary<string, string[]> Known = new()
+    {
+        ["claude"] = new[] { "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-fable-5-1" },
+        ["gemini"] = new[] { "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite" },
+        ["deepseek"] = new[] { "deepseek-chat", "deepseek-reasoner" },
+        ["hcnsec"] = new[]
+        {
+            "auto", "DeepSeek-V4-Flash", "DeepSeek-V4-Pro", "DeepSeek-V4.1-Flash", "glm-5.3", "glm-5.3-flash", "longcat-2.5",
+            "MiMo-V2.6-Flash", "MiniMax-M3.1-Flash", "Qwen3.8-27B", "Qwen3.8-Flash-Next", "sensenova-6.8-flash-lite", "step-5-preview",
+        },
+    };
+
+    public static string[] KnownModels(string id) => Known.TryGetValue(id, out var models) ? models : Array.Empty<string>();
 
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromMinutes(3) };
 

@@ -1,7 +1,7 @@
 {
   "id": "MhX2780.PyScript",
   "name": "PyScript",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "author": "MhX2780",
   "description": "A Python IDE in its own window: run code, problems, suggestions, a log, and an AI analysis of your program (Claude, Gemini, DeepSeek, api.hcnsec.cn or your own provider, with your own API key).",
   "assembly": "PyScript.dll",

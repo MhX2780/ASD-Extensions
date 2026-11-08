@@ -595,7 +595,7 @@ internal sealed class PyScriptWindow : Window
         customStyle.SelectedIndex = settings.CustomStyle switch { "anthropic" => 1, "gemini" => 2, _ => 0 };
         var custom = new StackPanel { Spacing = 10, Visibility = Visibility.Collapsed, Children = { customName, customUrl, customStyle } };
 
-        var model = new TextBox { Header = "Model", Width = 380 };
+        var model = new ComboBox { Header = "Model (pick one or type its name)", Width = 380, IsEditable = true };
         var key = new PasswordBox { Header = "API key", PlaceholderText = "paste a new key (empty = keep the saved one)", Width = 380 };
         var keyState = new TextBlock { Opacity = 0.7, FontSize = 12 };
         var info = new TextBlock { TextWrapping = TextWrapping.Wrap, Width = 380, Opacity = 0.7, FontSize = 12 };
@@ -609,6 +609,8 @@ internal sealed class PyScriptWindow : Window
         {
             var p = Chosen();
             custom.Visibility = p.Id == "custom" ? Visibility.Visible : Visibility.Collapsed;
+            model.Items.Clear();
+            foreach (var name in Ai.KnownModels(p.Id)) model.Items.Add(name);
             model.Text = settings.Models.TryGetValue(p.Id, out var m) && m.Length > 0 ? m : p.DefaultModel;
             keyState.Text = Ai.HasKey(_folder, p.Id) ? "A key is saved for this provider." : "No key is saved for this provider yet.";
             info.Text = p.Note + " The key is stored encrypted for your Windows account and is only sent to "
