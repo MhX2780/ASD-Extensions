@@ -136,7 +136,7 @@ internal sealed class PyScriptWindow : Window
         var aiGrid = new Grid { RowSpacing = 8 };
         aiGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         aiGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        var aiHead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _aiRing, new TextBlock { Text = "Claude reads your code, the problems and the last output.", Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center } } };
+        var aiHead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _aiRing, new TextBlock { Text = "The AI reads your code, the problems and the last output.", Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center } } };
         Grid.SetRow(_aiText, 1);
         aiGrid.Children.Add(aiHead);
         aiGrid.Children.Add(_aiText);
@@ -580,30 +580,64 @@ internal sealed class PyScriptWindow : Window
 
     private Flyout BuildSettingsFlyout()
     {
-        var key = new PasswordBox { Header = "API key", PlaceholderText = "paste a new key (empty = keep the saved one)", Width = 360 };
-        var model = new TextBox { Header = "Model", Text = Ai.LoadModel(_folder), Width = 360 };
-        var info = new TextBlock
-        {
-            Text = "Get a key at console.anthropic.com. It is stored encrypted for your Windows account and is only sent to api.anthropic.com.",
-            TextWrapping = TextWrapping.Wrap, Width = 360, Opacity = 0.7, FontSize = 12,
-        };
+        var settings = Ai.Load(_folder);
+        var provider = new ComboBox { Header = "Provider", Width = 380 };
+        foreach (var p in Ai.Providers) provider.Items.Add(p.Name);
+        provider.SelectedIndex = Math.Max(0, Array.FindIndex(Ai.Providers, p => p.Id == settings.Provider));
+
+        // only for "Another provider"
+        var customName = new TextBox { Header = "Name (optional)", Text = settings.CustomName, Width = 380 };
+        var customUrl = new TextBox { Header = "Address", PlaceholderText = "https://example.com/v1", Text = settings.CustomUrl, Width = 380 };
+        var customStyle = new ComboBox { Header = "Style (how the service is spoken to)", Width = 380 };
+        customStyle.Items.Add("OpenAI compatible");
+        customStyle.Items.Add("Anthropic");
+        customStyle.Items.Add("Gemini");
+        customStyle.SelectedIndex = settings.CustomStyle switch { "anthropic" => 1, "gemini" => 2, _ => 0 };
+        var custom = new StackPanel { Spacing = 10, Visibility = Visibility.Collapsed, Children = { customName, customUrl, customStyle } };
+
+        var model = new TextBox { Header = "Model", Width = 380 };
+        var key = new PasswordBox { Header = "API key", PlaceholderText = "paste a new key (empty = keep the saved one)", Width = 380 };
+        var keyState = new TextBlock { Opacity = 0.7, FontSize = 12 };
+        var info = new TextBlock { TextWrapping = TextWrapping.Wrap, Width = 380, Opacity = 0.7, FontSize = 12 };
         var save = new Button { Content = "Save" };
         var remove = new Button { Content = "Remove saved key" };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { save, remove } };
-        var flyout = new Flyout { Content = new StackPanel { Spacing = 10, Children = { key, model, info, buttons } } };
+        var flyout = new Flyout { Content = new StackPanel { Spacing = 10, Children = { provider, custom, model, key, keyState, info, buttons } } };
+
+        ProviderInfo Chosen() => Ai.Providers[Math.Max(0, provider.SelectedIndex)];
+        void Sync()
+        {
+            var p = Chosen();
+            custom.Visibility = p.Id == "custom" ? Visibility.Visible : Visibility.Collapsed;
+            model.Text = settings.Models.TryGetValue(p.Id, out var m) && m.Length > 0 ? m : p.DefaultModel;
+            keyState.Text = Ai.HasKey(_folder, p.Id) ? "A key is saved for this provider." : "No key is saved for this provider yet.";
+            info.Text = p.Note + " The key is stored encrypted for your Windows account and is only sent to "
+                + (p.Id == "custom" ? "the address you enter above." : new Uri(p.Url).Host + ".");
+        }
+        provider.SelectionChanged += (_, _) => Sync();
+        Sync();
+
         save.Click += async (_, _) =>
         {
-            if (key.Password.Length > 0) await Ai.SaveKeyAsync(_folder, key.Password.Trim());
-            Ai.SaveModel(_folder, model.Text);
+            var p = Chosen();
+            settings.Provider = p.Id;
+            settings.Models[p.Id] = model.Text.Trim();
+            settings.CustomName = customName.Text.Trim();
+            settings.CustomUrl = customUrl.Text.Trim();
+            settings.CustomStyle = customStyle.SelectedIndex switch { 1 => "anthropic", 2 => "gemini", _ => "openai" };
+            Ai.Save(_folder, settings);
+            if (key.Password.Length > 0) await Ai.SaveKeyAsync(_folder, p.Id, key.Password.Trim());
             key.Password = "";
+            Sync();
             flyout.Hide();
-            Log("AI settings saved");
+            Log("AI settings saved: " + Ai.Resolve(settings).Name);
         };
         remove.Click += async (_, _) =>
         {
-            await Ai.SaveKeyAsync(_folder, "");
-            flyout.Hide();
-            Log("The saved API key was removed");
+            var p = Chosen();
+            await Ai.SaveKeyAsync(_folder, p.Id, "");
+            Sync();
+            Log("The saved API key of " + p.Name + " was removed");
         };
         return flyout;
     }
@@ -611,10 +645,12 @@ internal sealed class PyScriptWindow : Window
     private async Task AnalyzeAsync()
     {
         Show(_aiItem);
-        var key = await Ai.LoadKeyAsync(_folder);
+        var settings = Ai.Load(_folder);
+        var provider = Ai.Resolve(settings);
+        var key = await Ai.LoadKeyAsync(_folder, provider.Id);
         if (string.IsNullOrEmpty(key))
         {
-            _aiText.Text = "Add your API key first: press 'AI settings'. The key is stored encrypted for your Windows account.";
+            _aiText.Text = $"Add your API key for {provider.Name} first: press 'AI settings'. The key is stored encrypted for your Windows account.";
             return;
         }
         var code = Normal;
@@ -626,11 +662,11 @@ internal sealed class PyScriptWindow : Window
         _aiButton.IsEnabled = false;
         _aiRing.Visibility = Visibility.Visible;
         _aiRing.IsActive = true;
-        var model = Ai.LoadModel(_folder);
-        Log("AI analysis started (" + model + ")");
+        var model = Ai.ModelFor(settings, provider);
+        Log($"AI analysis started ({provider.Name}, {model})");
         try
         {
-            _aiText.Text = await Ai.AnalyzeAsync(key, model, code, _output.Text, _lastProblems, cts.Token);
+            _aiText.Text = await Ai.AnalyzeAsync(provider, model, key, code, _output.Text, _lastProblems, cts.Token);
             Log("AI analysis finished");
         }
         catch (OperationCanceledException) { Log("AI analysis cancelled"); }

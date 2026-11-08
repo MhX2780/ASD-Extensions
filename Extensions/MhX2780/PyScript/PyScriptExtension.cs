@@ -28,7 +28,7 @@ internal sealed class Launcher : StackPanel
         Children.Add(new TextBlock { Text = "PyScript is a Python editor that opens in its own window.", TextWrapping = TextWrapping.Wrap });
         Children.Add(new TextBlock
         {
-            Text = "• Run your code and see the output, with input for input()\n• Problems: syntax errors, and more when pyflakes is installed\n• Suggestions while you type: keywords, built-ins, snippets, names in your file, and the members of imported modules\n• A log of what you did\n• AI analysis: Claude explains your program, finds bugs and shows fixes (needs your own API key)",
+            Text = "• Run your code and see the output, with input for input()\n• Problems: syntax errors, and more when pyflakes is installed\n• Suggestions while you type: keywords, built-ins, snippets, names in your file, and the members of imported modules\n• A log of what you did\n• AI analysis: Claude, Gemini, DeepSeek, api.hcnsec.cn or a provider of your own explains your program, finds bugs and shows fixes (needs your own API key)",
             TextWrapping = TextWrapping.Wrap,
             Opacity = 0.85,
         });
