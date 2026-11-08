@@ -23,6 +23,9 @@ tools/build-extensions.ps1 builds everything -> dist/extensions.zip + dist/exten
 | Quick Notes | Notes that save themselves (one .txt file each, in the extension's data folder) |
 | Date Calculator | Time between two dates; a date plus or minus days |
 | Checklist | A to-do list that is saved between runs |
+| Python Compiler | Write and run Python code with input, output and errors (needs Python 3) |
+| Python to EXE | Turns a .py file into an exe with PyInstaller (installs it when missing) |
+| Calendar | Month calendar with events; events with a time notify you |
 
 To add one: copy any folder under `Extensions/MhX2780/`, rename it, change `extension.json` (new `id`, `assembly` = the project name) and write your page. The build finds it by itself.
 

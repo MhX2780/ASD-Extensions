@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.PythonToExe",
+  "name": "Python to EXE",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Turns a .py file into a Windows exe with PyInstaller (one file, no console, icon). Installs PyInstaller when it is missing.",
+  "assembly": "PythonToExe.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.Calendar",
+  "name": "Calendar",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "A month calendar with events. Events with a time notify you when it is due.",
+  "assembly": "Calendar.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

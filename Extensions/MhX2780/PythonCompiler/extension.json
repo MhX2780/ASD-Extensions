@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.PythonCompiler",
+  "name": "Python Compiler",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Write and run Python code, see its output and errors, give it input. Needs Python 3 on this PC.",
+  "assembly": "PythonCompiler.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

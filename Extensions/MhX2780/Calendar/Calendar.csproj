@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>Calendar</AssemblyName>
+    <RootNamespace>CalendarTool</RootNamespace>
+    <WindowsPackageType>None</WindowsPackageType>
+    <EnableMsixTooling>true</EnableMsixTooling>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- compile against ASD's contract and Windows App SDK, but do not copy them: ASD already has both -->
+    <ProjectReference Include="..\..\..\Shared\ASD.Extensibility\ASD.Extensibility.csproj">
+      <Private>false</Private>
+      <ExcludeAssets>runtime</ExcludeAssets>
+    </ProjectReference>
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260508005">
+      <PrivateAssets>all</PrivateAssets>
+      <ExcludeAssets>runtime;native</ExcludeAssets>
+    </PackageReference>
+  </ItemGroup>
+</Project>
