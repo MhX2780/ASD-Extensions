@@ -130,7 +130,7 @@ internal static class FilePick
 }
 
 /// <summary>A read-only monospace text area that scrolls to the end; error lines are red.</summary>
-internal sealed class OutputView : Border
+internal sealed class OutputView : Grid
 {
     private static readonly SolidColorBrush Red = new(Windows.UI.Color.FromArgb(255, 235, 87, 87));
     private readonly ScrollViewer _scroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, HorizontalScrollBarVisibility = ScrollBarVisibility.Auto };
@@ -140,13 +140,16 @@ internal sealed class OutputView : Border
 
     public OutputView()
     {
-        Padding = new Thickness(10, 8, 10, 8);
-        CornerRadius = new CornerRadius(6);
-        BorderThickness = new Thickness(1);
-        BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.4 };
-        Background = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.08 };
         _scroll.Content = _text;
-        Child = _scroll;
+        Children.Add(new Border
+        {
+            Padding = new Thickness(10, 8, 10, 8),
+            CornerRadius = new CornerRadius(6),
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.4 },
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.08 },
+            Child = _scroll,
+        });
     }
 
     public string Text => _all.ToString();
