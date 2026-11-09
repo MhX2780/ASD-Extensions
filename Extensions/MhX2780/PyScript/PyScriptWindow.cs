@@ -61,6 +61,8 @@ internal sealed class PyScriptWindow : Window
     private readonly ScrollViewer _colorScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, IsHitTestVisible = false };
     private readonly Dictionary<Tok, SolidColorBrush> _brushes = new();
     private string _prevText = "";   // the code before the last change (to see that exactly one character was typed)
+    private readonly Border _caret = new() { Width = 1.5, Visibility = Visibility.Collapsed, IsHitTestVisible = false, Background = new SolidColorBrush(Microsoft.UI.Colors.White) };
+    private readonly DispatcherTimer _caretTimer = new() { Interval = TimeSpan.FromMilliseconds(530) };
 
     // the tabs
     private readonly TextBox _stdin = new() { PlaceholderText = "Input for input(): one line for each call", AcceptsReturn = true, Height = 64, IsSpellCheckEnabled = false, FontFamily = new FontFamily("Consolas") };
@@ -157,7 +159,11 @@ internal sealed class PyScriptWindow : Window
         _editor.Background = clear;
         _editor.BorderThickness = new Thickness(0);
         _editor.Padding = new Thickness(8, 8, 8, 8);
-        _colorText.Foreground = clear;   // only the coloured parts are drawn; the rest of the copy is see-through
+        // the editor's own text is see-through (its caret is drawn by _caret): the coloured copy under it is what is seen, so nothing is drawn twice
+        _editor.Foreground = clear;
+        foreach (var res in new[] { "TextControlForeground", "TextControlForegroundPointerOver", "TextControlForegroundFocused" }) _editor.Resources[res] = clear;
+        try { _editor.SelectionHighlightColor = new SolidColorBrush(Windows.UI.Color.FromArgb(110, 0, 120, 215)); } catch { }
+        try { _editor.SelectionHighlightColorWhenNotFocused = new SolidColorBrush(Windows.UI.Color.FromArgb(70, 128, 128, 128)); } catch { }
         _colorScroll.Padding = _editor.Padding;
         _colorScroll.Content = _colorText;
         _gutterScroll.Content = _gutter;
@@ -172,6 +178,8 @@ internal sealed class PyScriptWindow : Window
         _bubble.BorderThickness = new Thickness(1);
         _bubble.BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.5 };
         _bubble.Padding = new Thickness(4);
+        _overlay.Children.Add(_caret);
+        _overlay.SizeChanged += (_, e) => _overlay.Clip = new RectangleGeometry { Rect = new Rect(0, 0, e.NewSize.Width, e.NewSize.Height) };
         _overlay.Children.Add(_ghost1);
         _overlay.Children.Add(_ghost2);
         _overlay.Children.Add(_bubble);
@@ -183,8 +191,8 @@ internal sealed class PyScriptWindow : Window
         Grid.SetColumn(_colorScroll, 1);
         Grid.SetColumn(_overlay, 1);
         codeGrid.Children.Add(_gutterScroll);
-        codeGrid.Children.Add(_editor);
         codeGrid.Children.Add(_colorScroll);
+        codeGrid.Children.Add(_editor);
         codeGrid.Children.Add(_overlay);
         var card = new Border
         {
@@ -251,6 +259,9 @@ internal sealed class PyScriptWindow : Window
 
         // events
         _root.ActualThemeChanged += (_, _) => ApplyTheme();
+        _caretTimer.Tick += (_, _) => _caret.Opacity = _caret.Opacity > 0 ? 0 : 1;
+        _editor.GotFocus += (_, _) => UpdateCaret();
+        _editor.LostFocus += (_, _) => { _caret.Visibility = Visibility.Collapsed; _caretTimer.Stop(); };
         _editor.Loaded += (_, _) =>
         {
             _editor.ApplyTemplate();
@@ -264,6 +275,7 @@ internal sealed class PyScriptWindow : Window
             if (!_loading) AutoClose();
             _prevText = _editor.Text;
             Recolor();
+            UpdateCaret();
             if (_loading) return;
             SetDirty(true);
             _checkTimer.Stop();
@@ -272,6 +284,7 @@ internal sealed class PyScriptWindow : Window
         _editor.SelectionChanged += (_, _) =>
         {
             UpdatePosition();
+            UpdateCaret();
             ClearGhost();
             _suggestTimer.Stop();
             _suggestTimer.Start();
@@ -293,6 +306,7 @@ internal sealed class PyScriptWindow : Window
         Closed += (_, _) =>
         {
             _open = null;
+            _caretTimer.Stop();
             _checkTimer.Stop();
             _suggestTimer.Stop();
             _aiTimer.Stop();
@@ -402,6 +416,7 @@ internal sealed class PyScriptWindow : Window
         if (_editorScroll == null) return;
         _gutterScroll.ChangeView(null, _editorScroll.VerticalOffset, null, true);
         _colorScroll.ChangeView(_editorScroll.HorizontalOffset, _editorScroll.VerticalOffset, null, true);
+        UpdateCaret();
         ClearGhost();
         if (_bubble.Visibility == Visibility.Visible) PositionBubble();
     }
@@ -576,6 +591,7 @@ internal sealed class PyScriptWindow : Window
         var light = _root.ActualTheme == ElementTheme.Light;
         _brushes.Clear();
         foreach (var kind in Enum.GetValues<Tok>()) _brushes[kind] = new SolidColorBrush(Highlight.ColorOf(kind, light));
+        _caret.Background = new SolidColorBrush(light ? Microsoft.UI.Colors.Black : Microsoft.UI.Colors.White);
         Recolor();
     }
 
@@ -694,7 +710,37 @@ internal sealed class PyScriptWindow : Window
         var pad = _editor.Padding;
         var offsetX = _editorScroll?.HorizontalOffset ?? 0;
         var offsetY = _editorScroll?.VerticalOffset ?? 0;
-        return new Rect(pad.Left + column * cell.Width - offsetX, pad.Top + line * cell.Height - offsetY, 0, cell.Height);
+        var prefix = before[(before.LastIndexOf('\r') + 1)..];
+        var x = prefix.All(ch => ch < 128) ? column * cell.Width : TextWidth(prefix);   // letters of other scripts (Arabic...) are not as wide as a Consolas cell
+        return new Rect(pad.Left + x - offsetX, pad.Top + line * cell.Height - offsetY, 0, cell.Height);
+    }
+
+    /// <summary>The width of a piece of text in the editor's font.</summary>
+    private double TextWidth(string text)
+    {
+        if (text.Length == 0) return 0;
+        var probe = new TextBlock { FontFamily = _editor.FontFamily, FontSize = _editor.FontSize, Text = text + "M" };   // the M keeps the trailing spaces in the width
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return probe.DesiredSize.Width - CharSize().Width;
+    }
+
+    /// <summary>The editor's own caret is see-through together with its text, so the caret is drawn here (and blinks).</summary>
+    private void UpdateCaret()
+    {
+        if (_editor.FocusState == FocusState.Unfocused || _editor.SelectionLength != 0)
+        {
+            _caret.Visibility = Visibility.Collapsed;
+            _caretTimer.Stop();
+            return;
+        }
+        var rect = CaretRect();
+        _caret.Height = Math.Max(rect.Height, 16);
+        Canvas.SetLeft(_caret, rect.X - 0.75);
+        Canvas.SetTop(_caret, rect.Y);
+        _caret.Opacity = 1;
+        _caret.Visibility = Visibility.Visible;
+        _caretTimer.Stop();
+        _caretTimer.Start();
     }
 
     private Size _cell;
