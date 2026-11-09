@@ -6,6 +6,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
+using Microsoft.UI.Xaml.Documents;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Windows.Foundation;
@@ -52,8 +53,14 @@ internal sealed class PyScriptWindow : Window
     private readonly TextBlock _ghost1 = new() { FontFamily = new FontFamily("Consolas"), FontSize = 14, Opacity = 0.45, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
     private readonly TextBlock _ghost2 = new() { FontFamily = new FontFamily("Consolas"), FontSize = 14, Opacity = 0.45, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
     private readonly Border _bubble = new() { Visibility = Visibility.Collapsed };
-    private readonly ListView _list = new() { SelectionMode = ListViewSelectionMode.Single, IsTabStop = false, MaxHeight = 240, MinWidth = 290 };
+    private readonly ListView _list = new() { SelectionMode = ListViewSelectionMode.Single, IsTabStop = false, MaxHeight = 240, MinWidth = 290, MaxWidth = 520 };
     private ScrollViewer? _editorScroll;
+
+    // the colours: a see-through copy of the code, with only the strings, comments, keywords... coloured, lies over the editor text
+    private readonly TextBlock _colorText = new() { FontFamily = new FontFamily("Consolas"), FontSize = 14, TextWrapping = TextWrapping.NoWrap, Margin = new Thickness(0, 0, 400, 400) };
+    private readonly ScrollViewer _colorScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Hidden, IsHitTestVisible = false };
+    private readonly Dictionary<Tok, SolidColorBrush> _brushes = new();
+    private string _prevText = "";   // the code before the last change (to see that exactly one character was typed)
 
     // the tabs
     private readonly TextBox _stdin = new() { PlaceholderText = "Input for input(): one line for each call", AcceptsReturn = true, Height = 64, IsSpellCheckEnabled = false, FontFamily = new FontFamily("Consolas") };
@@ -150,6 +157,9 @@ internal sealed class PyScriptWindow : Window
         _editor.Background = clear;
         _editor.BorderThickness = new Thickness(0);
         _editor.Padding = new Thickness(8, 8, 8, 8);
+        _colorText.Foreground = clear;   // only the coloured parts are drawn; the rest of the copy is see-through
+        _colorScroll.Padding = _editor.Padding;
+        _colorScroll.Content = _colorText;
         _gutterScroll.Content = _gutter;
         _gutterScroll.Width = 56;
 
@@ -170,9 +180,11 @@ internal sealed class PyScriptWindow : Window
         codeGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         codeGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         Grid.SetColumn(_editor, 1);
+        Grid.SetColumn(_colorScroll, 1);
         Grid.SetColumn(_overlay, 1);
         codeGrid.Children.Add(_gutterScroll);
         codeGrid.Children.Add(_editor);
+        codeGrid.Children.Add(_colorScroll);
         codeGrid.Children.Add(_overlay);
         var card = new Border
         {
@@ -238,15 +250,20 @@ internal sealed class PyScriptWindow : Window
         _editor.PreviewKeyDown += OnEditorKey;
 
         // events
+        _root.ActualThemeChanged += (_, _) => ApplyTheme();
         _editor.Loaded += (_, _) =>
         {
             _editor.ApplyTemplate();
+            ApplyTheme();
             _editorScroll = FindScroll(_editor);
             if (_editorScroll != null) _editorScroll.ViewChanged += OnEditorScrolled;
         };
         _editor.TextChanged += (_, _) =>
         {
             UpdateGutter();
+            if (!_loading) AutoClose();
+            _prevText = _editor.Text;
+            Recolor();
             if (_loading) return;
             SetDirty(true);
             _checkTimer.Stop();
@@ -384,6 +401,7 @@ internal sealed class PyScriptWindow : Window
     {
         if (_editorScroll == null) return;
         _gutterScroll.ChangeView(null, _editorScroll.VerticalOffset, null, true);
+        _colorScroll.ChangeView(_editorScroll.HorizontalOffset, _editorScroll.VerticalOffset, null, true);
         ClearGhost();
         if (_bubble.Visibility == Visibility.Visible) PositionBubble();
     }
@@ -525,17 +543,142 @@ internal sealed class PyScriptWindow : Window
                 else if (bubble) AcceptSelected();
                 else Type("    ");
                 return;
+            case Windows.System.VirtualKey.Back:
+                if (TryDeletePair()) e.Handled = true;   // Backspace between () [] {} or quotes removes both
+                return;
             case Windows.System.VirtualKey.Enter:
             {
                 e.Handled = true;   // a new line starts with the indent of this one, and 4 more after a colon
                 var line = CurrentLine();
-                Type("\r" + IndentOf(line) + (line.TrimEnd().EndsWith(':') ? "    " : ""));
+                var indent = IndentOf(line);
+                var all = _editor.Text;
+                var at = _editor.SelectionStart;
+                var open = at > 0 && at <= all.Length ? "([{".IndexOf(all[at - 1]) : -1;
+                if (_editor.SelectionLength == 0 && open >= 0 && at < all.Length && all[at] == ")]}"[open])
+                {
+                    // Enter between brackets: the closing one goes to its own line, the caret waits in the middle
+                    Type("\r" + indent + "    " + "\r" + indent);
+                    _editor.Select(_editor.SelectionStart - (1 + indent.Length), 0);
+                    return;
+                }
+                Type("\r" + indent + (line.TrimEnd().EndsWith(':') ? "    " : ""));
                 return;
             }
         }
     }
 
     // ───────── the suggestion bubble ─────────
+
+    // ───────── colours and brackets ─────────
+
+    private void ApplyTheme()
+    {
+        var light = _root.ActualTheme == ElementTheme.Light;
+        _brushes.Clear();
+        foreach (var kind in Enum.GetValues<Tok>()) _brushes[kind] = new SolidColorBrush(Highlight.ColorOf(kind, light));
+        Recolor();
+    }
+
+    private void AddRun(string text, Brush? brush)
+    {
+        var parts = text.Split('\n');
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (i > 0) _colorText.Inlines.Add(new LineBreak());
+            if (parts[i].Length == 0) continue;
+            var run = new Run { Text = parts[i] };
+            if (brush != null) run.Foreground = brush;
+            _colorText.Inlines.Add(run);
+        }
+    }
+
+    /// <summary>Builds the see-through copy of the code that carries the colours (the editor's own text stays as it is, under it).</summary>
+    private void Recolor()
+    {
+        try
+        {
+            var code = Normal;
+            _colorText.Inlines.Clear();
+            var position = 0;
+            if (code.Length <= 80000)
+            {
+                foreach (var (start, length, kind) in Highlight.Scan(code))
+                {
+                    if (start > position) AddRun(code[position..start], null);
+                    AddRun(code.Substring(start, length), _brushes.TryGetValue(kind, out var brush) ? brush : null);
+                    position = start + length;
+                }
+            }
+            if (position < code.Length) AddRun(code[position..], null);
+        }
+        catch
+        {
+            _colorText.Inlines.Clear();   // no colours is better than a wrong copy
+        }
+    }
+
+    private static bool WordChar(char c) => char.IsLetterOrDigit(c) || c == '_';
+
+    private void EditText(int position, int remove, string insert, int caretAt)
+    {
+        _editor.Select(position, remove);
+        _editor.SelectedText = insert;
+        _editor.Select(caretAt, 0);
+        _prevText = _editor.Text;
+    }
+
+    private static bool IsStringPrefix(string text, int quoteIndex)
+    {
+        var from = quoteIndex;
+        while (from > 0 && WordChar(text[from - 1])) from--;
+        var word = text[from..quoteIndex];
+        return word.Length is >= 1 and <= 2 && word.All(c => "rRbBfFuU".IndexOf(c) >= 0);
+    }
+
+    /// <summary>Brackets and quotes close themselves: after "print(" the text is "print()" with the caret between; typing the closing one steps over it.</summary>
+    private void AutoClose()
+    {
+        var text = _editor.Text;
+        if (text.Length != _prevText.Length + 1 || _editor.SelectionLength != 0) return;
+        var caret = _editor.SelectionStart;
+        if (caret < 1 || caret > text.Length || text.Remove(caret - 1, 1) != _prevText) return;   // not one typed character at the caret
+
+        var typed = text[caret - 1];
+        var next = caret < text.Length ? text[caret] : '\0';
+        var free = next == '\0' || char.IsWhiteSpace(next) || ")]},:;".IndexOf(next) >= 0;   // nothing that belongs to a word follows
+
+        var open = "([{".IndexOf(typed);
+        if (open >= 0)
+        {
+            if (free) EditText(caret, 0, ")]}"[open].ToString(), caret);
+            return;
+        }
+        if (")]}".IndexOf(typed) >= 0)
+        {
+            if (next == typed) EditText(caret, 1, "", caret);   // the closing one is already there: step over it
+            return;
+        }
+        if (typed == '"' || typed == '\'')
+        {
+            if (next == typed) { EditText(caret, 1, "", caret); return; }
+            var before = caret >= 2 ? text[caret - 2] : '\0';
+            if (before == typed) return;                                        // the third quote of a triple-quoted string
+            if (WordChar(before) && !IsStringPrefix(text, caret - 1)) return;   // an apostrophe inside a word
+            if (free) EditText(caret, 0, typed.ToString(), caret);
+        }
+    }
+
+    private bool TryDeletePair()
+    {
+        if (_editor.SelectionLength != 0) return false;
+        var text = _editor.Text;
+        var caret = _editor.SelectionStart;
+        if (caret < 1 || caret >= text.Length) return false;
+        var pair = new string(new[] { text[caret - 1], text[caret] });
+        if (pair is not ("()" or "[]" or "{}" or "\"\"" or "''")) return false;
+        EditText(caret - 1, 2, "", caret - 1);
+        return true;
+    }
 
     /// <summary>Where the caret is, in the editor's own coordinates.</summary>
     private Rect CaretRect()
@@ -574,6 +717,8 @@ internal sealed class PyScriptWindow : Window
         "keyword" => ("k", Windows.UI.Color.FromArgb(255, 192, 57, 43)),
         "built-in" => ("b", Windows.UI.Color.FromArgb(255, 39, 174, 96)),
         "snippet" => ("{}", Windows.UI.Color.FromArgb(255, 120, 130, 140)),
+        "string" => ("s", Windows.UI.Color.FromArgb(255, 190, 110, 70)),
+        "number" => ("#", Windows.UI.Color.FromArgb(255, 90, 160, 110)),
         _ => ("m", Windows.UI.Color.FromArgb(255, 22, 160, 133)),
     };
 
@@ -597,7 +742,7 @@ internal sealed class PyScriptWindow : Window
             },
         };
         var label = new TextBlock { Text = s.Label, VerticalAlignment = VerticalAlignment.Center };
-        var kind = new TextBlock { Text = s.Kind, Opacity = 0.55, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+        var kind = new TextBlock { Text = s.Detail.Length > 0 ? s.Detail : s.Kind, Opacity = 0.55, FontSize = 11, MaxWidth = 230, TextTrimming = TextTrimming.CharacterEllipsis, VerticalAlignment = VerticalAlignment.Center };
         var row = new Grid { ColumnSpacing = 10 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
@@ -913,6 +1058,7 @@ internal sealed class PyScriptWindow : Window
         customStyle.Items.Add("Gemini");
         customStyle.SelectedIndex = settings.CustomStyle switch { "anthropic" => 1, "gemini" => 2, _ => 0 };
         var custom = new StackPanel { Spacing = 10, Visibility = Visibility.Collapsed, Children = { customName, customUrl, customStyle } };
+        var cfAccount = new TextBox { Header = "Cloudflare Account ID", PlaceholderText = "32 letters and digits, from dash.cloudflare.com", Text = settings.CloudflareAccount, Width = 380, Visibility = Visibility.Collapsed };
 
         var model = new ComboBox { Header = "Model (pick one or type its name)", Width = 380, IsEditable = true };
         var key = new PasswordBox { Header = "API key", PlaceholderText = "paste a new key (empty = keep the saved one)", Width = 380 };
@@ -921,13 +1067,14 @@ internal sealed class PyScriptWindow : Window
         var save = new Button { Content = "Save" };
         var remove = new Button { Content = "Remove saved key" };
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8, Children = { save, remove } };
-        var flyout = new Flyout { Content = new StackPanel { Spacing = 10, Children = { provider, custom, model, key, keyState, info, buttons } } };
+        var flyout = new Flyout { Content = new StackPanel { Spacing = 10, Children = { provider, custom, cfAccount, model, key, keyState, info, buttons } } };
 
         ProviderInfo Chosen() => Ai.Providers[Math.Max(0, provider.SelectedIndex)];
         void Sync()
         {
             var p = Chosen();
             custom.Visibility = p.Id == "custom" ? Visibility.Visible : Visibility.Collapsed;
+            cfAccount.Visibility = p.Id == "cloudflare" ? Visibility.Visible : Visibility.Collapsed;
             model.Items.Clear();
             foreach (var name in Ai.KnownModels(p.Id)) model.Items.Add(name);
             model.Text = settings.Models.TryGetValue(p.Id, out var m) && m.Length > 0 ? m : p.DefaultModel;
@@ -944,6 +1091,7 @@ internal sealed class PyScriptWindow : Window
             settings.Provider = p.Id;
             settings.Models[p.Id] = model.Text.Trim();
             settings.CustomName = customName.Text.Trim();
+            settings.CloudflareAccount = cfAccount.Text.Trim();
             settings.CustomUrl = customUrl.Text.Trim();
             settings.CustomStyle = customStyle.SelectedIndex switch { 1 => "anthropic", 2 => "gemini", _ => "openai" };
             settings.Inline = _aiComplete.IsChecked == true;

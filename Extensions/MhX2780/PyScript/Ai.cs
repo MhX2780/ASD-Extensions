@@ -16,6 +16,7 @@ internal sealed class AiSettings
     public string CustomUrl { get; set; } = "";
     public string CustomStyle { get; set; } = "openai";
     public bool Inline { get; set; } = true;   // the AI continues the code in faded text while you type
+    public string CloudflareAccount { get; set; } = "";   // the Account ID that is part of the Cloudflare Workers AI address
 }
 
 /// <summary>
@@ -30,6 +31,7 @@ internal static class Ai
         new("gemini", "Gemini (Google)", "gemini", "https://generativelanguage.googleapis.com", "gemini-2.5-flash", "Get a key at aistudio.google.com."),
         new("deepseek", "DeepSeek", "openai", "https://api.deepseek.com", "deepseek-chat", "Get a key at platform.deepseek.com."),
         new("hcnsec", "api.hcnsec.cn", "openai", "https://api.hcnsec.cn/v1", "auto", "A free OpenAI-compatible gateway (GLM, DeepSeek, Qwen, Kimi, Step, MiniMax...). 'auto' lets the service pick the model. Register on api.hcnsec.cn to get a key."),
+        new("cloudflare", "Cloudflare Workers AI", "openai", "https://api.cloudflare.com/client/v4/accounts/ACCOUNT_ID/ai/v1", "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "Needs your Cloudflare Account ID (below) and an API token with the 'Workers AI' permission (dash.cloudflare.com > AI > Workers AI). It has a free daily allowance."),
         new("custom", "Another provider...", "openai", "", "", "Enter the address of any service, how it is spoken to, and a model name."),
     };
 
@@ -39,6 +41,11 @@ internal static class Ai
         ["claude"] = new[] { "claude-sonnet-5-5", "claude-opus-5-5", "claude-haiku-5-5", "claude-fable-5-1" },
         ["gemini"] = new[] { "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite" },
         ["deepseek"] = new[] { "deepseek-chat", "deepseek-reasoner" },
+        ["cloudflare"] = new[]
+        {
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "@cf/openai/gpt-oss-120b", "@cf/openai/gpt-oss-20b", "@cf/qwen/qwen3.8-27b",
+            "@cf/deepseek-ai/deepseek-v4-flash-0731", "@cf/moonshotai/kimi-k2.7-code", "@cf/meta/llama-3.1-8b-instruct",
+        },
         ["hcnsec"] = new[]
         {
             "auto", "DeepSeek-V4-Flash", "DeepSeek-V4-Pro", "DeepSeek-V4.1-Flash", "glm-5.3", "glm-5.3-flash", "longcat-2.5",
@@ -82,6 +89,11 @@ internal static class Ai
     public static ProviderInfo Resolve(AiSettings settings)
     {
         var provider = Find(settings.Provider);
+        if (provider.Id == "cloudflare")
+        {
+            var account = settings.CloudflareAccount.Trim();
+            return provider with { Url = account.Length == 0 ? "" : provider.Url.Replace("ACCOUNT_ID", Uri.EscapeDataString(account)) };
+        }
         if (provider.Id != "custom") return provider;
         var name = string.IsNullOrWhiteSpace(settings.CustomName) ? "Another provider" : settings.CustomName.Trim();
         return provider with { Name = name, Style = settings.CustomStyle, Url = settings.CustomUrl.Trim() };
@@ -136,7 +148,7 @@ internal static class Ai
 
     public static async Task<string> AnalyzeAsync(ProviderInfo provider, string model, string key, string code, string runOutput, string problems, CancellationToken ct)
     {
-        if (provider.Url.Length == 0) throw new InvalidOperationException("Enter the address of the provider in 'AI settings'.");
+        if (provider.Url.Length == 0) throw new InvalidOperationException("Enter the provider's address (for Cloudflare: your Account ID) in 'AI settings'.");
         if (model.Length == 0) throw new InvalidOperationException("Enter a model name in 'AI settings'.");
         if (code.Length > 60000) code = code[..60000];
         if (runOutput.Length > 8000) runOutput = runOutput[^8000..];
@@ -169,7 +181,7 @@ internal static class Ai
 
     private static async Task<string> AskAsync(ProviderInfo provider, string model, string key, string text, int maxTokens, CancellationToken ct)
     {
-        if (provider.Url.Length == 0) throw new InvalidOperationException("Enter the address of the provider in 'AI settings'.");
+        if (provider.Url.Length == 0) throw new InvalidOperationException("Enter the provider's address (for Cloudflare: your Account ID) in 'AI settings'.");
         if (model.Length == 0) throw new InvalidOperationException("Enter a model name in 'AI settings'.");
 
         using var request = new HttpRequestMessage(HttpMethod.Post, UrlFor(provider, model));
