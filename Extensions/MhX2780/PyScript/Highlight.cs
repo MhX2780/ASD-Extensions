@@ -58,8 +58,7 @@ internal static class Highlight
             if (s[j] == '\\') { j += 2; continue; }
             if (triple)
             {
-                if (s[j] == q && j + 2 < n + 0 && s[j + 1] == q && s[j + 2] == q) { j += 3; break; }
-                if (s[j] == q && j + 2 == n - 0 - 0 && false) break;
+                if (s[j] == q && j + 2 < n && s[j + 1] == q && s[j + 2] == q) { j += 3; break; }
             }
             else
             {
