@@ -5,15 +5,18 @@ using AsdPython;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
+using Windows.Foundation;
 using Windows.Graphics;
 
 namespace PyScript;
 
 /// <summary>
-/// The editor window: toolbar on top, the code with a suggestions list beside it, and tabs below (Output, Problems, Logs, AI analysis).
-/// Everything is built in code. Python runs as a separate process (see Py in PythonTools.cs).
+/// The editor window: toolbar on top, the code in an editor card (line numbers, a suggestion bubble under the caret, the AI's faded
+/// continuation) and tabs below (Output, Problems, Logs, AI analysis). Everything is built in code.
+/// Python runs as a separate process (see Py in PythonTools.cs).
 /// </summary>
 internal sealed class PyScriptWindow : Window
 {
@@ -40,15 +43,25 @@ internal sealed class PyScriptWindow : Window
     private readonly string _folder;
     private readonly TitleBar _bar;
     private readonly Grid _root = new();
+
+    // the editor card
     private readonly TextBox _editor = new() { AcceptsReturn = true, TextWrapping = TextWrapping.NoWrap, IsSpellCheckEnabled = false, FontFamily = new FontFamily("Consolas"), FontSize = 14 };
-    private readonly TextBox _stdin = new() { Header = "Input for input() (one line for each call)", AcceptsReturn = true, Height = 72, IsSpellCheckEnabled = false, FontFamily = new FontFamily("Consolas") };
+    private readonly TextBlock _gutter = new() { FontFamily = new FontFamily("Consolas"), FontSize = 14, TextAlignment = TextAlignment.Right, Opacity = 0.4, Margin = new Thickness(12, 8, 8, 40), Text = "1" };
+    private readonly ScrollViewer _gutterScroll = new() { VerticalScrollBarVisibility = ScrollBarVisibility.Hidden, HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled, IsHitTestVisible = false };
+    private readonly Canvas _overlay = new();
+    private readonly TextBlock _ghost1 = new() { FontFamily = new FontFamily("Consolas"), FontSize = 14, Opacity = 0.45, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
+    private readonly TextBlock _ghost2 = new() { FontFamily = new FontFamily("Consolas"), FontSize = 14, Opacity = 0.45, Visibility = Visibility.Collapsed, IsHitTestVisible = false };
+    private readonly Border _bubble = new() { Visibility = Visibility.Collapsed };
+    private readonly ListView _list = new() { SelectionMode = ListViewSelectionMode.Single, IsTabStop = false, MaxHeight = 240, MinWidth = 290 };
+    private ScrollViewer? _editorScroll;
+
+    // the tabs
+    private readonly TextBox _stdin = new() { PlaceholderText = "Input for input(): one line for each call", AcceptsReturn = true, Height = 64, IsSpellCheckEnabled = false, FontFamily = new FontFamily("Consolas") };
     private readonly OutputView _output = new();
     private readonly OutputView _logs = new();
+    private readonly OutputView _aiOut = new();
     private readonly ListView _problems = new() { IsItemClickEnabled = true, SelectionMode = ListViewSelectionMode.None };
-    private readonly ListView _suggestions = new() { IsItemClickEnabled = true, SelectionMode = ListViewSelectionMode.None };
-    private readonly TextBox _aiText = new() { IsReadOnly = true, AcceptsReturn = true, TextWrapping = TextWrapping.Wrap, IsSpellCheckEnabled = false, VerticalAlignment = VerticalAlignment.Stretch };
     private readonly ProgressRing _aiRing = new() { Width = 20, Height = 20, IsActive = false, Visibility = Visibility.Collapsed };
-    private readonly TextBlock _suggestHeader = new() { Text = "Suggestions", FontWeight = Microsoft.UI.Text.FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) };
     private readonly TextBlock _pos = new() { Opacity = 0.7, FontSize = 12 };
     private readonly TextBlock _python = new() { Opacity = 0.7, FontSize = 12, HorizontalAlignment = HorizontalAlignment.Right };
     private readonly Pivot _tabs = new();
@@ -56,12 +69,15 @@ internal sealed class PyScriptWindow : Window
     private readonly PivotItem _problemsItem = new() { Header = "Problems" };
     private readonly PivotItem _logsItem = new() { Header = "Logs" };
     private readonly PivotItem _aiItem = new() { Header = "AI analysis" };
+
     private readonly DispatcherTimer _checkTimer = new() { Interval = TimeSpan.FromMilliseconds(900) };
     private readonly DispatcherTimer _suggestTimer = new() { Interval = TimeSpan.FromMilliseconds(150) };
+    private readonly DispatcherTimer _aiTimer = new() { Interval = TimeSpan.FromMilliseconds(1300) };
     private readonly Dictionary<string, string[]> _members = new();
     private readonly Button _runButton;
     private readonly Button _stopButton;
     private readonly Button _aiButton;
+    private readonly ToggleButton _aiComplete;
 
     private string? _path;          // the file being edited (null = the scratch file)
     private bool _dirty;
@@ -70,9 +86,15 @@ internal sealed class PyScriptWindow : Window
     private bool _busy;
     private bool _flakesMissing;
     private bool _flakesHinted;
+    private bool _ghostErrorLogged;
+    private int _gutterLines = 1;
+    private int _bubbleStart;
+    private int _bubbleLength;
+    private string _ghostText = "";   // what the AI would add at the caret ('\r' for new lines), empty = nothing shown
     private string _lastProblems = "";
     private CancellationTokenSource? _runCts;
     private CancellationTokenSource? _aiCts;
+    private CancellationTokenSource? _ghostCts;
 
     private PyScriptWindow(IAsdHost host)
     {
@@ -83,13 +105,25 @@ internal sealed class PyScriptWindow : Window
         SetTitleBar(_bar);
         try { AppWindow.Resize(new SizeInt32(1240, 820)); } catch { }
 
+        var settings = Ai.Load(_folder);
+
         // toolbar
         _runButton = Tool("", "Run (F5)", () => _ = RunAsync(), accent: true);
         _stopButton = Tool("", "Stop", () => _runCts?.Cancel());
         _stopButton.IsEnabled = false;
         _aiButton = Tool("", "Analyze with AI", () => _ = AnalyzeAsync());
-        var settings = Tool("", "AI settings", () => { });
-        settings.Flyout = BuildSettingsFlyout();
+        _aiComplete = new ToggleButton { IsChecked = settings.Inline, Content = "✦ AI complete" };
+        ToolTipService.SetToolTip(_aiComplete, "The AI continues your code in faded text while you type. Shift+Tab accepts it.");
+        _aiComplete.Click += (_, _) =>
+        {
+            var s = Ai.Load(_folder);
+            s.Inline = _aiComplete.IsChecked == true;
+            Ai.Save(_folder, s);
+            ClearGhost();
+            if (s.Inline) { _aiTimer.Stop(); _aiTimer.Start(); }
+        };
+        var aiSettings = Tool("", "AI settings", () => { });
+        aiSettings.Flyout = BuildSettingsFlyout();
         var toolbar = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, Margin = new Thickness(12, 0, 12, 8) };
         foreach (var item in new UIElement[]
         {
@@ -101,27 +135,54 @@ internal sealed class PyScriptWindow : Window
             _runButton, _stopButton,
             Tool("", "Check", () => _ = CheckAsync(true)),
             Separator(),
-            _aiButton, settings,
+            _aiButton, _aiComplete, aiSettings,
             Separator(),
             Tool("", "Clear output", () => _output.Clear()),
         }) toolbar.Children.Add(item);
 
-        // code + suggestions
+        // the editor card: line numbers | the code | a layer on top for the suggestion bubble and the AI's faded text
         ScrollViewer.SetVerticalScrollBarVisibility(_editor, ScrollBarVisibility.Auto);
         ScrollViewer.SetHorizontalScrollBarVisibility(_editor, ScrollBarVisibility.Auto);
-        _editor.Margin = new Thickness(12, 0, 6, 0);
-        var side = new Grid { Margin = new Thickness(6, 0, 12, 0) };
-        side.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        side.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        Grid.SetRow(_suggestions, 1);
-        side.Children.Add(_suggestHeader);
-        side.Children.Add(_suggestions);
-        var top = new Grid();
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
-        Grid.SetColumn(side, 1);
-        top.Children.Add(_editor);
-        top.Children.Add(side);
+        var clear = new SolidColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
+        foreach (var name in new[] { "TextControlBackground", "TextControlBackgroundPointerOver", "TextControlBackgroundFocused", "TextControlBorderBrush", "TextControlBorderBrushPointerOver", "TextControlBorderBrushFocused" })
+            _editor.Resources[name] = clear;
+        _editor.Resources["TextControlBorderThemeThicknessFocused"] = new Thickness(0);
+        _editor.Background = clear;
+        _editor.BorderThickness = new Thickness(0);
+        _editor.Padding = new Thickness(8, 8, 8, 8);
+        _gutterScroll.Content = _gutter;
+        _gutterScroll.Width = 56;
+
+        Brush bubbleBackground;
+        try { bubbleBackground = (Brush)Application.Current.Resources["ApplicationPageBackgroundThemeBrush"]; }
+        catch { bubbleBackground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 45, 45, 45)); }
+        _bubble.Child = _list;
+        _bubble.Background = bubbleBackground;
+        _bubble.CornerRadius = new CornerRadius(8);
+        _bubble.BorderThickness = new Thickness(1);
+        _bubble.BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.5 };
+        _bubble.Padding = new Thickness(4);
+        _overlay.Children.Add(_ghost1);
+        _overlay.Children.Add(_ghost2);
+        _overlay.Children.Add(_bubble);
+
+        var codeGrid = new Grid();
+        codeGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        codeGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        Grid.SetColumn(_editor, 1);
+        Grid.SetColumn(_overlay, 1);
+        codeGrid.Children.Add(_gutterScroll);
+        codeGrid.Children.Add(_editor);
+        codeGrid.Children.Add(_overlay);
+        var card = new Border
+        {
+            Margin = new Thickness(12, 0, 12, 0),
+            CornerRadius = new CornerRadius(8),
+            BorderThickness = new Thickness(1),
+            BorderBrush = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.35 },
+            Background = new SolidColorBrush(Microsoft.UI.Colors.Gray) { Opacity = 0.08 },
+            Child = codeGrid,
+        };
 
         // tabs
         var outputGrid = new Grid { RowSpacing = 8 };
@@ -137,9 +198,9 @@ internal sealed class PyScriptWindow : Window
         aiGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         aiGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         var aiHead = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 10, Children = { _aiRing, new TextBlock { Text = "The AI reads your code, the problems and the last output.", Opacity = 0.7, VerticalAlignment = VerticalAlignment.Center } } };
-        Grid.SetRow(_aiText, 1);
+        Grid.SetRow(_aiOut, 1);
         aiGrid.Children.Add(aiHead);
-        aiGrid.Children.Add(_aiText);
+        aiGrid.Children.Add(_aiOut);
         _aiItem.Content = aiGrid;
         foreach (var item in new[] { _outputItem, _problemsItem, _logsItem, _aiItem }) _tabs.Items.Add(item);
         _tabs.Margin = new Thickness(12, 4, 12, 0);
@@ -148,7 +209,7 @@ internal sealed class PyScriptWindow : Window
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(3, GridUnitType.Star) });
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
         Grid.SetRow(_tabs, 1);
-        main.Children.Add(top);
+        main.Children.Add(card);
         main.Children.Add(_tabs);
 
         var status = new Grid { Margin = new Thickness(14, 4, 14, 6) };
@@ -173,12 +234,19 @@ internal sealed class PyScriptWindow : Window
         Accelerate(Windows.System.VirtualKey.S, Windows.System.VirtualKeyModifiers.Control, () => _ = SaveAsync(false));
         Accelerate(Windows.System.VirtualKey.O, Windows.System.VirtualKeyModifiers.Control, () => _ = OpenFileAsync());
         Accelerate(Windows.System.VirtualKey.N, Windows.System.VirtualKeyModifiers.Control, () => _ = NewFileAsync());
-        Accelerate(Windows.System.VirtualKey.Space, Windows.System.VirtualKeyModifiers.Control, AcceptFirstSuggestion);
+        Accelerate(Windows.System.VirtualKey.Space, Windows.System.VirtualKeyModifiers.Control, () => _ = RefreshSuggestionsAsync(true));
         _editor.PreviewKeyDown += OnEditorKey;
 
         // events
+        _editor.Loaded += (_, _) =>
+        {
+            _editor.ApplyTemplate();
+            _editorScroll = FindScroll(_editor);
+            if (_editorScroll != null) _editorScroll.ViewChanged += OnEditorScrolled;
+        };
         _editor.TextChanged += (_, _) =>
         {
+            UpdateGutter();
             if (_loading) return;
             SetDirty(true);
             _checkTimer.Stop();
@@ -187,12 +255,15 @@ internal sealed class PyScriptWindow : Window
         _editor.SelectionChanged += (_, _) =>
         {
             UpdatePosition();
+            ClearGhost();
             _suggestTimer.Stop();
             _suggestTimer.Start();
+            _aiTimer.Stop();
+            _aiTimer.Start();
         };
         _checkTimer.Tick += (_, _) => { _checkTimer.Stop(); _ = CheckAsync(false); };
-        _suggestTimer.Tick += (_, _) => { _suggestTimer.Stop(); _ = RefreshSuggestionsAsync(); };
-        _suggestions.ItemClick += (_, e) => { if (e.ClickedItem is Suggestion s) Insert(s); };
+        _suggestTimer.Tick += (_, _) => { _suggestTimer.Stop(); _ = RefreshSuggestionsAsync(false); };
+        _aiTimer.Tick += (_, _) => { _aiTimer.Stop(); _ = RequestGhostAsync(); };
         _problems.ItemClick += (_, e) => { if (e.ClickedItem is Problem p) GoToLine(p.Line); };
 
         AppWindow.Closing += async (_, e) =>
@@ -207,8 +278,10 @@ internal sealed class PyScriptWindow : Window
             _open = null;
             _checkTimer.Stop();
             _suggestTimer.Stop();
+            _aiTimer.Stop();
             _runCts?.Cancel();
             _aiCts?.Cancel();
+            _ghostCts?.Cancel();
         };
 
         _ = StartAsync();
@@ -244,6 +317,22 @@ internal sealed class PyScriptWindow : Window
         var accelerator = new KeyboardAccelerator { Key = key, Modifiers = modifiers };
         accelerator.Invoked += (_, e) => { e.Handled = true; action(); };
         _root.KeyboardAccelerators.Add(accelerator);
+    }
+
+    private static bool IsDown(Windows.System.VirtualKey key)
+        => Microsoft.UI.Input.InputKeyboardSource.GetKeyStateForCurrentThread(key).HasFlag(Windows.UI.Core.CoreVirtualKeyStates.Down);
+
+    private static ScrollViewer? FindScroll(DependencyObject root)
+    {
+        var count = VisualTreeHelper.GetChildrenCount(root);
+        for (var i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is ScrollViewer sv) return sv;
+            var deeper = FindScroll(child);
+            if (deeper != null) return deeper;
+        }
+        return null;
     }
 
     /// <summary>The code with normal line ends (a TextBox keeps '\r').</summary>
@@ -283,6 +372,22 @@ internal sealed class PyScriptWindow : Window
         _pos.Text = $"Line {line}, column {column}";
     }
 
+    private void UpdateGutter()
+    {
+        var lines = _editor.Text.Count(c => c == '\r') + 1;
+        if (lines == _gutterLines) return;
+        _gutterLines = lines;
+        _gutter.Text = string.Join("\n", Enumerable.Range(1, lines));
+    }
+
+    private void OnEditorScrolled(object? sender, ScrollViewerViewChangedEventArgs e)
+    {
+        if (_editorScroll == null) return;
+        _gutterScroll.ChangeView(null, _editorScroll.VerticalOffset, null, true);
+        ClearGhost();
+        if (_bubble.Visibility == Visibility.Visible) PositionBubble();
+    }
+
     private async Task StartAsync()
     {
         try { File.WriteAllText(Path.Combine(_folder, "syntax_check.py"), CheckScript); } catch { }
@@ -291,6 +396,7 @@ internal sealed class PyScriptWindow : Window
         _editor.Text = File.Exists(scratch) ? File.ReadAllText(scratch) : Template;
         _loading = false;
         SetDirty(false);
+        UpdateGutter();
         UpdatePosition();
         Log("PyScript opened");
 
@@ -374,7 +480,7 @@ internal sealed class PyScriptWindow : Window
         return true;
     }
 
-    // ───────── editing: Tab, Enter (keeps the indent), suggestions ─────────
+    // ───────── typing: Tab, Enter, the keys of the bubble, Shift+Tab for the AI's text ─────────
 
     private void Type(string text)
     {
@@ -395,37 +501,162 @@ internal sealed class PyScriptWindow : Window
 
     private void OnEditorKey(object sender, KeyRoutedEventArgs e)
     {
-        if (e.Key == Windows.System.VirtualKey.Tab)
+        var bubble = _bubble.Visibility == Visibility.Visible;
+        switch (e.Key)
         {
-            e.Handled = true;
-            Type("    ");
+            case Windows.System.VirtualKey.Down when bubble:
+                e.Handled = true;
+                MoveSelection(1);
+                return;
+            case Windows.System.VirtualKey.Up when bubble:
+                e.Handled = true;
+                MoveSelection(-1);
+                return;
+            case Windows.System.VirtualKey.Enter when bubble:
+                e.Handled = true;
+                AcceptSelected();
+                return;
+            case Windows.System.VirtualKey.Escape:
+                if (bubble || _ghostText.Length > 0) { e.Handled = true; HideBubble(); ClearGhost(); }
+                return;
+            case Windows.System.VirtualKey.Tab:
+                e.Handled = true;
+                if (IsDown(Windows.System.VirtualKey.Shift)) { if (_ghostText.Length > 0) AcceptGhost(); }   // Shift+Tab = take the AI's faded text
+                else if (bubble) AcceptSelected();
+                else Type("    ");
+                return;
+            case Windows.System.VirtualKey.Enter:
+            {
+                e.Handled = true;   // a new line starts with the indent of this one, and 4 more after a colon
+                var line = CurrentLine();
+                Type("\r" + IndentOf(line) + (line.TrimEnd().EndsWith(':') ? "    " : ""));
+                return;
+            }
         }
-        else if (e.Key == Windows.System.VirtualKey.Enter)
+    }
+
+    // ───────── the suggestion bubble ─────────
+
+    /// <summary>Where the caret is, in the editor's own coordinates.</summary>
+    private Rect CaretRect()
+    {
+        var text = _editor.Text;
+        var index = Math.Min(_editor.SelectionStart, text.Length);
+        if (text.Length == 0) return new Rect(8, 8, 0, 20);
+        if (index >= text.Length)
         {
-            e.Handled = true;   // a new line starts with the indent of this one, and 4 more after a colon
-            var line = CurrentLine();
-            Type("\r" + IndentOf(line) + (line.TrimEnd().EndsWith(':') ? "    " : ""));
+            if (text[^1] == '\r')   // the caret is on a new, empty line
+            {
+                var last = _editor.GetRectFromCharacterIndex(text.Length - 1, false);
+                return new Rect(8, last.Y + last.Height, 0, last.Height);
+            }
+            return _editor.GetRectFromCharacterIndex(text.Length - 1, true);
         }
+        return _editor.GetRectFromCharacterIndex(index, false);
+    }
+
+    private static (string Letter, Windows.UI.Color Color) BadgeFor(string kind) => kind switch
+    {
+        "class" => ("C", Windows.UI.Color.FromArgb(255, 230, 140, 0)),
+        "function" => ("f", Windows.UI.Color.FromArgb(255, 155, 89, 182)),
+        "variable" => ("v", Windows.UI.Color.FromArgb(255, 52, 152, 219)),
+        "keyword" => ("k", Windows.UI.Color.FromArgb(255, 192, 57, 43)),
+        "built-in" => ("b", Windows.UI.Color.FromArgb(255, 39, 174, 96)),
+        "snippet" => ("{}", Windows.UI.Color.FromArgb(255, 120, 130, 140)),
+        _ => ("m", Windows.UI.Color.FromArgb(255, 22, 160, 133)),
+    };
+
+    private ListViewItem MakeItem(Suggestion s)
+    {
+        var (letter, color) = BadgeFor(s.Kind);
+        var badge = new Border
+        {
+            Width = 22,
+            Height = 22,
+            CornerRadius = new CornerRadius(5),
+            Background = new SolidColorBrush(color),
+            Child = new TextBlock
+            {
+                Text = letter,
+                FontSize = 11,
+                FontWeight = Microsoft.UI.Text.FontWeights.Bold,
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.White),
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+            },
+        };
+        var label = new TextBlock { Text = s.Label, VerticalAlignment = VerticalAlignment.Center };
+        var kind = new TextBlock { Text = s.Kind, Opacity = 0.55, FontSize = 11, VerticalAlignment = VerticalAlignment.Center };
+        var row = new Grid { ColumnSpacing = 10 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(label, 1);
+        Grid.SetColumn(kind, 2);
+        row.Children.Add(badge);
+        row.Children.Add(label);
+        row.Children.Add(kind);
+        var item = new ListViewItem { Content = row, Tag = s, MinHeight = 30, Padding = new Thickness(8, 2, 12, 2) };
+        item.Tapped += (_, _) => Insert(s);
+        return item;
+    }
+
+    private void ShowBubble(List<Suggestion> items, int start, int length)
+    {
+        _bubbleStart = start;
+        _bubbleLength = length;
+        _list.Items.Clear();
+        foreach (var s in items) _list.Items.Add(MakeItem(s));
+        _list.SelectedIndex = 0;
+        _bubble.Visibility = Visibility.Visible;
+        PositionBubble();
+    }
+
+    private void PositionBubble()
+    {
+        var rect = CaretRect();
+        _bubble.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        var size = _bubble.DesiredSize;
+        var x = Math.Max(0, Math.Min(rect.X, _editor.ActualWidth - size.Width - 8));
+        var y = rect.Y + rect.Height + 4;
+        if (y + size.Height > _editor.ActualHeight) y = Math.Max(0, rect.Y - size.Height - 4);   // no room below: above the line
+        Canvas.SetLeft(_bubble, x);
+        Canvas.SetTop(_bubble, y);
+    }
+
+    private void HideBubble()
+    {
+        _bubble.Visibility = Visibility.Collapsed;
+        _list.Items.Clear();
+    }
+
+    private void MoveSelection(int step)
+    {
+        var count = _list.Items.Count;
+        if (count == 0) return;
+        var index = (Math.Max(_list.SelectedIndex, 0) + step + count) % count;
+        _list.SelectedIndex = index;
+        _list.ScrollIntoView(_list.Items[index]);
+    }
+
+    private void AcceptSelected()
+    {
+        if (_list.SelectedIndex >= 0 && _list.Items[_list.SelectedIndex] is ListViewItem { Tag: Suggestion s }) Insert(s);
     }
 
     private void Insert(Suggestion s)
     {
-        var caret = _editor.SelectionStart;
-        var (prefix, _) = Complete.Context(_editor.Text, caret);
-        var start = caret - prefix.Length;
+        var start = _bubbleStart;
+        var length = _bubbleLength;
+        HideBubble();
         var text = s.Kind == "snippet" ? s.Insert.Replace("\r", "\r" + IndentOf(CurrentLine())) : s.Insert;
-        _editor.Select(start, prefix.Length);
+        _editor.Select(start, length);
         _editor.SelectedText = text;
         _editor.Select(start + text.Length, 0);
         _editor.Focus(FocusState.Programmatic);
     }
 
-    private void AcceptFirstSuggestion()
-    {
-        if (_suggestions.ItemsSource is List<Suggestion> { Count: > 0 } list) Insert(list[0]);
-    }
-
-    /// <summary>Names inside a module that the file imports (asked from Python once, then remembered).</summary>
+    /// <summary>Names inside a module that the file imports, as "C:name" (class), "F:name" (function), "V:name" (other). Asked from Python once, then remembered.</summary>
     private async Task<string[]> MembersAsync(string owner, string text)
     {
         if (_members.TryGetValue(owner, out var known)) return known;
@@ -435,7 +666,7 @@ internal sealed class PyScriptWindow : Window
         {
             var py = Py.Find();
             if (py == null) return Array.Empty<string>();
-            var script = "import " + owner + " as m; print(' '.join(n for n in dir(m) if not n.startswith('_')))";
+            var script = "import " + owner + " as m; print(' '.join(('C:' if isinstance(getattr(m,n,None),type) else 'F:' if callable(getattr(m,n,None)) else 'V:')+n for n in dir(m) if not n.startswith('_')))";
             var (code, output) = Py.RunQuick(py.File, py.Prefix.Concat(new[] { "-c", script }), 8000);
             return code == 0 ? output.Split(new[] { ' ', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries) : Array.Empty<string>();
         });
@@ -443,7 +674,17 @@ internal sealed class PyScriptWindow : Window
         return names;
     }
 
-    private async Task RefreshSuggestionsAsync()
+    private static Suggestion ParseMember(string raw)
+    {
+        if (raw.Length > 2 && raw[1] == ':')
+        {
+            var kind = raw[0] switch { 'C' => "class", 'F' => "function", _ => "variable" };
+            return new Suggestion(raw[2..], raw[2..], kind);
+        }
+        return new Suggestion(raw, raw, "variable");
+    }
+
+    private async Task RefreshSuggestionsAsync(bool force)
     {
         var text = _editor.Text;
         var caret = _editor.SelectionStart;
@@ -453,13 +694,81 @@ internal sealed class PyScriptWindow : Window
         {
             var names = await MembersAsync(owner, text);
             if (_editor.SelectionStart != caret) return;   // the person moved on
-            items = names
-                .Where(n => prefix.Length == 0 || n.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                .Take(60).Select(n => new Suggestion(n, n, owner)).ToList();
+            items = names.Select(ParseMember)
+                .Where(s => s.Label.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && (prefix.Length == 0 || !s.Label.Equals(prefix, StringComparison.Ordinal)))
+                .Take(60).ToList();
         }
-        else items = Complete.Local(text, prefix);
-        _suggestions.ItemsSource = items;
-        _suggestHeader.Text = items.Count == 0 ? "Suggestions" : $"Suggestions ({items.Count})";
+        else items = Complete.Local(text, prefix, force);
+
+        if (items.Count == 0) { HideBubble(); return; }
+        ShowBubble(items, caret - prefix.Length, prefix.Length);
+    }
+
+    // ───────── the AI continues the code (faded text, Shift+Tab takes it) ─────────
+
+    private void ClearGhost()
+    {
+        _ghostCts?.Cancel();
+        _ghostText = "";
+        _ghost1.Visibility = Visibility.Collapsed;
+        _ghost2.Visibility = Visibility.Collapsed;
+    }
+
+    private void ShowGhost(string answer)
+    {
+        var lines = answer.Replace("\r\n", "\n").Split('\n');
+        _ghostText = string.Join("\r", lines);
+        var rect = CaretRect();
+        _ghost1.Text = lines[0];
+        Canvas.SetLeft(_ghost1, rect.X);
+        Canvas.SetTop(_ghost1, rect.Y);
+        _ghost1.Visibility = Visibility.Visible;
+        if (lines.Length > 1)
+        {
+            _ghost2.Text = string.Join("\n", lines.Skip(1));
+            _ghost2.LineHeight = rect.Height > 0 ? rect.Height : 20;
+            Canvas.SetLeft(_ghost2, 8);
+            Canvas.SetTop(_ghost2, rect.Y + (rect.Height > 0 ? rect.Height : 20));
+            _ghost2.Visibility = Visibility.Visible;
+        }
+    }
+
+    private void AcceptGhost()
+    {
+        var text = _ghostText;
+        ClearGhost();
+        Type(text);
+    }
+
+    /// <summary>After a pause in typing: asks the AI what comes next. Only when the caret is at the end of the code, so the faded text never covers other code.</summary>
+    private async Task RequestGhostAsync()
+    {
+        if (_aiComplete.IsChecked != true || _bubble.Visibility == Visibility.Visible) return;
+        var text = _editor.Text;
+        var caret = _editor.SelectionStart;
+        if (caret < 8 || text[caret..].Trim().Length > 0) return;
+
+        var settings = Ai.Load(_folder);
+        var provider = Ai.Resolve(settings);
+        var key = await Ai.LoadKeyAsync(_folder, provider.Id);
+        if (string.IsNullOrEmpty(key)) return;
+
+        _ghostCts?.Cancel();
+        var cts = _ghostCts = new CancellationTokenSource();
+        try
+        {
+            var before = text[..caret].Replace("\r\n", "\n").Replace('\r', '\n');
+            var answer = await Ai.CompleteAsync(provider, Ai.ModelFor(settings, provider), key, before, cts.Token);
+            if (cts.IsCancellationRequested || _editor.Text != text || _editor.SelectionStart != caret || answer.Trim().Length == 0) return;
+            ShowGhost(answer);
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
+        {
+            if (_ghostErrorLogged) return;
+            _ghostErrorLogged = true;
+            Log("AI completion failed (switch it off with 'AI complete'): " + ex.Message);
+        }
     }
 
     private void GoToLine(int line)
@@ -627,11 +936,13 @@ internal sealed class PyScriptWindow : Window
             settings.CustomName = customName.Text.Trim();
             settings.CustomUrl = customUrl.Text.Trim();
             settings.CustomStyle = customStyle.SelectedIndex switch { 1 => "anthropic", 2 => "gemini", _ => "openai" };
+            settings.Inline = _aiComplete.IsChecked == true;
             Ai.Save(_folder, settings);
             if (key.Password.Length > 0) await Ai.SaveKeyAsync(_folder, p.Id, key.Password.Trim());
             key.Password = "";
             Sync();
             flyout.Hide();
+            _ghostErrorLogged = false;
             Log("AI settings saved: " + Ai.Resolve(settings).Name);
         };
         remove.Click += async (_, _) =>
@@ -644,6 +955,13 @@ internal sealed class PyScriptWindow : Window
         return flyout;
     }
 
+    private void SetAi(string text)
+    {
+        _aiOut.Clear();
+        foreach (var line in text.Replace("\r\n", "\n").Split('\n')) _aiOut.Add(line, false, scroll: false);
+        _aiOut.ScrollToTop();
+    }
+
     private async Task AnalyzeAsync()
     {
         Show(_aiItem);
@@ -652,15 +970,15 @@ internal sealed class PyScriptWindow : Window
         var key = await Ai.LoadKeyAsync(_folder, provider.Id);
         if (string.IsNullOrEmpty(key))
         {
-            _aiText.Text = $"Add your API key for {provider.Name} first: press 'AI settings'. The key is stored encrypted for your Windows account.";
+            SetAi($"Add your API key for {provider.Name} first: press 'AI settings'. The key is stored encrypted for your Windows account.");
             return;
         }
         var code = Normal;
-        if (code.Trim().Length == 0) { _aiText.Text = "There is no code to analyze."; return; }
+        if (code.Trim().Length == 0) { SetAi("There is no code to analyze."); return; }
 
         _aiCts?.Cancel();
         var cts = _aiCts = new CancellationTokenSource();
-        _aiText.Text = "";
+        _aiOut.Clear();
         _aiButton.IsEnabled = false;
         _aiRing.Visibility = Visibility.Visible;
         _aiRing.IsActive = true;
@@ -668,13 +986,13 @@ internal sealed class PyScriptWindow : Window
         Log($"AI analysis started ({provider.Name}, {model})");
         try
         {
-            _aiText.Text = await Ai.AnalyzeAsync(provider, model, key, code, _output.Text, _lastProblems, cts.Token);
+            SetAi(await Ai.AnalyzeAsync(provider, model, key, code, _output.Text, _lastProblems, cts.Token));
             Log("AI analysis finished");
         }
         catch (OperationCanceledException) { Log("AI analysis cancelled"); }
         catch (Exception ex)
         {
-            _aiText.Text = "The analysis failed: " + ex.Message;
+            SetAi("The analysis failed: " + ex.Message);
             Log("AI analysis failed: " + ex.Message);
         }
         finally
