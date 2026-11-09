@@ -540,19 +540,30 @@ internal sealed class PyScriptWindow : Window
     /// <summary>Where the caret is, in the editor's own coordinates.</summary>
     private Rect CaretRect()
     {
+        // worked out from the line and column (Consolas is monospaced and the lines never wrap), the same way the line numbers are
+        // placed: the editor's own rectangle API gave positions that were shifted by the padding
         var text = _editor.Text;
         var index = Math.Min(_editor.SelectionStart, text.Length);
-        if (text.Length == 0) return new Rect(8, 8, 0, 20);
-        if (index >= text.Length)
-        {
-            if (text[^1] == '\r')   // the caret is on a new, empty line
-            {
-                var last = _editor.GetRectFromCharacterIndex(text.Length - 1, false);
-                return new Rect(8, last.Y + last.Height, 0, last.Height);
-            }
-            return _editor.GetRectFromCharacterIndex(text.Length - 1, true);
-        }
-        return _editor.GetRectFromCharacterIndex(index, false);
+        var before = text[..index];
+        var line = before.Count(c => c == '\r');
+        var column = index - (before.LastIndexOf('\r') + 1);
+        var cell = CharSize();
+        var pad = _editor.Padding;
+        var offsetX = _editorScroll?.HorizontalOffset ?? 0;
+        var offsetY = _editorScroll?.VerticalOffset ?? 0;
+        return new Rect(pad.Left + column * cell.Width - offsetX, pad.Top + line * cell.Height - offsetY, 0, cell.Height);
+    }
+
+    private Size _cell;
+
+    /// <summary>The size of one character cell of the editor's font (width of a letter, height of a line).</summary>
+    private Size CharSize()
+    {
+        if (_cell.Width > 0) return _cell;
+        var probe = new TextBlock { FontFamily = _editor.FontFamily, FontSize = _editor.FontSize, Text = new string('M', 20) };
+        probe.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        _cell = new Size(probe.DesiredSize.Width / 20, probe.DesiredSize.Height);
+        return _cell;
     }
 
     private static (string Letter, Windows.UI.Color Color) BadgeFor(string kind) => kind switch
@@ -726,9 +737,8 @@ internal sealed class PyScriptWindow : Window
         if (lines.Length > 1)
         {
             _ghost2.Text = string.Join("\n", lines.Skip(1));
-            _ghost2.LineHeight = rect.Height > 0 ? rect.Height : 20;
-            Canvas.SetLeft(_ghost2, 8);
-            Canvas.SetTop(_ghost2, rect.Y + (rect.Height > 0 ? rect.Height : 20));
+            Canvas.SetLeft(_ghost2, _editor.Padding.Left - (_editorScroll?.HorizontalOffset ?? 0));   // the next lines start at column 0
+            Canvas.SetTop(_ghost2, rect.Y + rect.Height);
             _ghost2.Visibility = Visibility.Visible;
         }
     }
