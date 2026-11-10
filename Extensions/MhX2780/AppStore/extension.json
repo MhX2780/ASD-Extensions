@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.AppStore",
+  "name": "Apps Store",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Find, install, update and remove apps (Visual Studio, VS Code, Git, Python...) through winget, Windows' own package manager. The apps come from their makers' websites; the download shows its progress.",
+  "assembly": "AppStore.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": ["winget"]
+  }
+}
