@@ -19,7 +19,7 @@ namespace PyScript;
 /// continuation) and tabs below (Output, Problems, Logs, AI analysis). Everything is built in code.
 /// Python runs as a separate process (see Py in PythonTools.cs).
 /// </summary>
-internal sealed class PyScriptWindow : Window
+internal sealed partial class PyScriptWindow : Window
 {
     // the syntax check: reads the code from stdin; prints OK or line:column:message
     private const string CheckScript = """
@@ -225,12 +225,15 @@ internal sealed class PyScriptWindow : Window
         foreach (var item in new[] { _outputItem, _problemsItem, _logsItem, _aiItem }) _tabs.Items.Add(item);
         _tabs.Margin = new Thickness(12, 4, 12, 0);
 
-        var main = new Grid();
+        var main = _main;
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(3, GridUnitType.Star) });
         main.RowDefinitions.Add(new RowDefinition { Height = new GridLength(2, GridUnitType.Star) });
         Grid.SetRow(_tabs, 1);
         main.Children.Add(card);
+        main.Children.Add(_split);
         main.Children.Add(_tabs);
+        _tabs.Resources["PivotHeaderItemFontSize"] = 15.0;   // smaller tab names so they fit in a narrow panel
+        BuildPanel(card);
 
         var status = new Grid { Margin = new Thickness(14, 4, 14, 6) };
         status.Children.Add(_pos);
@@ -240,6 +243,9 @@ internal sealed class PyScriptWindow : Window
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         _root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
         _root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        toolbar.Children.Add(Separator());
+        toolbar.Children.Add(_panelToggle);
+        toolbar.Children.Add(_dockButton);
         Grid.SetRow(toolbar, 1);
         Grid.SetRow(main, 2);
         Grid.SetRow(status, 3);
@@ -251,6 +257,7 @@ internal sealed class PyScriptWindow : Window
 
         // keyboard
         Accelerate(Windows.System.VirtualKey.F5, Windows.System.VirtualKeyModifiers.None, () => _ = RunAsync());
+        Accelerate(Windows.System.VirtualKey.J, Windows.System.VirtualKeyModifiers.Control, () => SetPanelOpen(!_panelOpen));
         Accelerate(Windows.System.VirtualKey.S, Windows.System.VirtualKeyModifiers.Control, () => _ = SaveAsync(false));
         Accelerate(Windows.System.VirtualKey.O, Windows.System.VirtualKeyModifiers.Control, () => _ = OpenFileAsync());
         Accelerate(Windows.System.VirtualKey.N, Windows.System.VirtualKeyModifiers.Control, () => _ = NewFileAsync());
@@ -376,7 +383,11 @@ internal sealed class PyScriptWindow : Window
         try { File.AppendAllText(Path.Combine(_folder, "pyscript.log"), line + "\n"); } catch { }
     }
 
-    private void Show(PivotItem item) => _tabs.SelectedItem = item;
+    private void Show(PivotItem item)
+    {
+        if (!_panelOpen) SetPanelOpen(true, save: false);   // running or checking brings a hidden panel back (until the next start)
+        _tabs.SelectedItem = item;
+    }
 
     private void SetBusy(bool busy)
     {
@@ -765,6 +776,7 @@ internal sealed class PyScriptWindow : Window
         "snippet" => ("{}", Windows.UI.Color.FromArgb(255, 120, 130, 140)),
         "string" => ("s", Windows.UI.Color.FromArgb(255, 190, 110, 70)),
         "number" => ("#", Windows.UI.Color.FromArgb(255, 90, 160, 110)),
+        "missing" => ("!", Windows.UI.Color.FromArgb(255, 150, 150, 150)),
         _ => ("m", Windows.UI.Color.FromArgb(255, 22, 160, 133)),
     };
 
@@ -890,6 +902,8 @@ internal sealed class PyScriptWindow : Window
     {
         var text = _editor.Text;
         var caret = _editor.SelectionStart;
+        var import = ImportContextAt(text, caret);
+        if (import != null) { await ShowImportSuggestionsAsync(import, text, caret); return; }
         var (prefix, owner) = Complete.Context(text, caret);
         List<Suggestion> items;
         if (owner != null)
