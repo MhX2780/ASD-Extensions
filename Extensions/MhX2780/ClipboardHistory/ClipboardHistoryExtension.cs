@@ -2,6 +2,7 @@ using System.Text.Json;
 using ASD.Extensibility;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Controls.Primitives;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace ClipboardHistory;
