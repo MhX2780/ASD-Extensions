@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.EnvEditor",
+  "name": "Env & PATH Editor",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Edit your user environment variables and your PATH safely: missing and duplicate folders are marked, and the old PATH is saved before every change.",
+  "assembly": "EnvEditor.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

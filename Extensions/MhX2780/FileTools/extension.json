@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.FileTools",
+  "name": "File Tools",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Rename many files at once with a preview and undo, find duplicate files (they go to the Recycle Bin), and see which folders take the most space.",
+  "assembly": "FileTools.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

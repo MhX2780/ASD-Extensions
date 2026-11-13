@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.HostsEditor",
+  "name": "Hosts Editor",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Edit the Windows hosts file: add or block names, with a backup before every save. Saving asks Windows for administrator permission.",
+  "assembly": "HostsEditor.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}
