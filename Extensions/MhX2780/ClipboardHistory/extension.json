@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.ClipboardHistory",
+  "name": "Clipboard History",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Remembers the text you copy while ASD is running: search it, copy it again, pin the ones you need. Only pinned items are saved to disk; passwords from password managers are skipped.",
+  "assembly": "ClipboardHistory.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

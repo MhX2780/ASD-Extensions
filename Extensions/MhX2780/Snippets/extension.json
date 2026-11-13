@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.Snippets",
+  "name": "Snippets",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Your own library of code and command snippets: search, edit, copy. Saved automatically; a few examples to start with.",
+  "assembly": "Snippets.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

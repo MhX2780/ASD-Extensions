@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.TextDiff",
+  "name": "Text Diff",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Compare two texts or two files line by line: added and removed lines are colored, unchanged parts are folded.",
+  "assembly": "TextDiff.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}
