@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.PipManager",
+  "name": "Pip Manager",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "See, install, update and remove Python packages (pip) for the Python on this PC, with live output. Needs Python 3.",
+  "assembly": "PipManager.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

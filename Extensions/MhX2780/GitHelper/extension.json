@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.GitHelper",
+  "name": "Git Helper",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Status, stage, commit, push, pull and history for a local Git repository. Needs Git for Windows.",
+  "assembly": "GitHelper.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}
