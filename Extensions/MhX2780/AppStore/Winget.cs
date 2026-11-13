@@ -102,13 +102,13 @@ internal static class Winget
 
     // ───────── progress ─────────
 
-    private static readonly Regex Sizes = new(@"(\d+(?:[.,]\d+)?)\s*(B|KB|MB|GB)\s*/\s*(\d+(?:[.,]\d+)?)\s*(B|KB|MB|GB)", RegexOptions.IgnoreCase);
+    private static readonly Regex Sizes = new(@"(\d+(?:[.,]\d+)?)\s*([KMG]?i?B)\s*/\s*(\d+(?:[.,]\d+)?)\s*([KMG]?i?B)", RegexOptions.IgnoreCase);
     private static readonly Regex Percent = new(@"(?<!\d)(\d{1,3})\s*%");
 
     private static double Bytes(string number, string unit)
     {
         var value = double.Parse(number.Replace(',', '.'), CultureInfo.InvariantCulture);
-        return unit.ToUpperInvariant() switch { "KB" => value * 1024, "MB" => value * 1024 * 1024, "GB" => value * 1024 * 1024 * 1024, _ => value };
+        return char.ToUpperInvariant(unit[0]) switch { 'K' => value * 1024, 'M' => value * 1024 * 1024, 'G' => value * 1024 * 1024 * 1024, _ => value };
     }
 
     /// <summary>The download line "██████▒▒▒  12.3 MB / 45.0 MB" (or just a percent) as a fraction; null when the line is not a progress line.</summary>
@@ -122,6 +122,8 @@ internal static class Winget
             if (total > 0)
                 return new WingetProgress(Math.Clamp(done / total, 0, 1), $"{sizes.Groups[1].Value} {sizes.Groups[2].Value} of {sizes.Groups[3].Value} {sizes.Groups[4].Value}");
         }
+        var bare = Regex.Match(line.Trim(), @"^(\d{1,3})\s*%$");   // a line that is only "37 %"
+        if (bare.Success) return new WingetProgress(Math.Clamp(int.Parse(bare.Groups[1].Value) / 100.0, 0, 1), bare.Groups[1].Value + " %");
         if (line.Contains('█') || line.Contains('▒'))
         {
             var percent = Percent.Match(line);

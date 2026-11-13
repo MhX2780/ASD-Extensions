@@ -70,6 +70,8 @@ internal sealed class StoreView : Grid
     private bool _wingetOk;
     private bool _loaded;
     private CancellationTokenSource? _cts;
+    private ProgressDialog? _progress;
+    private bool _downloading;
 
     public StoreView(IAsdHost host)
     {
@@ -230,11 +232,13 @@ internal sealed class StoreView : Grid
         _cts = new CancellationTokenSource();
         SetBusy(true, $"{label} {name}…");
         AddLog("> winget " + ArgumentsFor(verb, id));
-        var downloading = false;
+        _downloading = false;
+        _progress = new ProgressDialog(XamlRoot, $"{label} {name}", () => _cts?.Cancel());
+        _progress.Show();
         int code;
         try
         {
-            code = (await Winget.RunAsync(ArgumentsFor(verb, id), line => DispatcherQueue.TryEnqueue(() => OnLine(label, name, line, ref downloading)), _cts.Token)).Code;
+            code = (await Winget.RunAsync(ArgumentsFor(verb, id), line => DispatcherQueue.TryEnqueue(() => OnLine(label, name, line)), _cts.Token)).Code;
         }
         catch (Exception ex)
         {
@@ -242,6 +246,8 @@ internal sealed class StoreView : Grid
             code = -1;
         }
 
+        _progress?.Close();
+        _progress = null;
         var done = code == 0;
         var message = code switch
         {
@@ -258,12 +264,13 @@ internal sealed class StoreView : Grid
     }
 
     /// <summary>Everything winget prints while it works: a size line moves the bar; the installer's own phase has no percent.</summary>
-    private void OnLine(string label, string name, string line, ref bool downloading)
+    private void OnLine(string label, string name, string line)
     {
         var progress = Winget.ParseProgress(line);
         if (progress is { } p)
         {
-            downloading = true;
+            _downloading = true;
+            _progress?.SetPercent(p.Fraction, p.Text);
             _bar.IsIndeterminate = false;
             _bar.Value = p.Fraction * 100;
             _status.Text = $"{label} {name}: downloading {p.Text}";
@@ -273,14 +280,18 @@ internal sealed class StoreView : Grid
 
         var text = line.Trim();
         AddLog(text);
-        if (downloading && (text.Contains("Starting package install", StringComparison.OrdinalIgnoreCase) || text.Contains("installer hash", StringComparison.OrdinalIgnoreCase)))
+        if (text.StartsWith("Downloading", StringComparison.OrdinalIgnoreCase)) _progress?.SetWorking("Starting the download");
+        else if (text.Contains("installer hash", StringComparison.OrdinalIgnoreCase)) _progress?.SetWorking("Checking the download");
+        if (_downloading && (text.Contains("Starting package install", StringComparison.OrdinalIgnoreCase) || text.Contains("installer hash", StringComparison.OrdinalIgnoreCase)))
         {
             _bar.IsIndeterminate = true;
+            _progress?.SetWorking("The installer is working. Windows does not report a percentage for this part.");
             _status.Text = $"{label} {name}: the installer is working (Windows does not report a percentage for this part)…";
         }
         else if (text.Contains("Starting package install", StringComparison.OrdinalIgnoreCase) || text.Contains("Starting package uninstall", StringComparison.OrdinalIgnoreCase))
         {
             _bar.IsIndeterminate = true;
+            _progress?.SetWorking("Working. No percentage is available for this part.");
             _status.Text = $"{label} {name}: working (no percentage is available for this part)…";
         }
     }
