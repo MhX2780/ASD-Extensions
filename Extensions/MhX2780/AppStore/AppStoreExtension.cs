@@ -76,6 +76,7 @@ internal sealed class StoreView : Grid
     public StoreView(IAsdHost host)
     {
         _host = host;
+        Icons.Init(host.DataFolder);
         RowSpacing = 10;
         RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
@@ -351,10 +352,30 @@ internal sealed class StoreView : Grid
         var icon = new FontIcon { Glyph = "", FontSize = 22, Opacity = 0.8, VerticalAlignment = VerticalAlignment.Center };
         Grid.SetColumn(text, 1);
         Grid.SetColumn(buttons, 2);
-        row.Children.Add(icon);
+        row.Children.Add(IconFor(icon, id, name));
         row.Children.Add(text);
         row.Children.Add(buttons);
         return row;
+    }
+
+    /// <summary>The generic icon, replaced by the app's own picture when one is found (looked for when the row is shown).</summary>
+    private static FrameworkElement IconFor(FontIcon fallback, string id, string name)
+    {
+        var holder = new Grid { Width = 36, Height = 36, VerticalAlignment = VerticalAlignment.Center };
+        fallback.HorizontalAlignment = HorizontalAlignment.Center;
+        var image = new Image { Width = 32, Height = 32, Stretch = Stretch.Uniform, HorizontalAlignment = HorizontalAlignment.Center, VerticalAlignment = VerticalAlignment.Center, Visibility = Visibility.Collapsed };
+        holder.Children.Add(fallback);
+        holder.Children.Add(image);
+        holder.Loaded += async (_, _) =>
+        {
+            if (image.Source != null) return;
+            var source = await Icons.GetAsync(id, name);
+            if (source == null) return;
+            image.Source = source;
+            image.Visibility = Visibility.Visible;
+            fallback.Visibility = Visibility.Collapsed;
+        };
+        return holder;
     }
 
     private Button Action(string label, string verb, string id, string name, bool accent)
