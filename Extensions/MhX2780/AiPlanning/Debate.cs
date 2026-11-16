@@ -170,7 +170,6 @@ internal sealed class Debate
                 var answers = await AskUser(questions, ct);
                 if (answers == null) Answers.Add("The user did not answer: decide with reasonable assumptions and say which ones.");
                 else for (var i = 0; i < questions.Count; i++) Answers.Add($"Q: {questions[i]}\nA: {(i < answers.Count && answers[i].Trim().Length > 0 ? answers[i].Trim() : "(no answer)")}");
-                if (answers != null) Draft = Draft;   // the next round judges the same draft, now with the answers
             }
         }
 
