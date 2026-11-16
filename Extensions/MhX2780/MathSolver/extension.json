@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.MathSolver",
+  "name": "Math Solver (AI)",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Solves maths problems step by step with an AI model of your choice (Claude, Gemini, DeepSeek, api.hcnsec.cn, Cloudflare Workers AI or your own provider, with your own API key), and can check the answer with a second model.",
+  "assembly": "MathSolver.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}
