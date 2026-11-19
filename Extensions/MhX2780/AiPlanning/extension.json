@@ -1,7 +1,7 @@
 {
   "id": "MhX2780.AiPlanning",
   "name": "AI Planning",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": "MhX2780",
   "description": "Several AI models (the ones you add, each with its own key and role) discuss your proposal in cells, look for flaws, can ask you questions, and agree on ONE decision. You can add time for long or complex decisions.",
   "assembly": "AiPlanning.dll",
