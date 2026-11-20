@@ -115,7 +115,7 @@ internal sealed class Db : IDisposable
                         var step = sqlite3_step(stmt);
                         if (step == 100)
                         {
-                            if (rows.Count >= maxRows) { truncated = true; continue; }   // keep counting nothing, just finish the statement
+                            if (rows.Count >= maxRows) { truncated = true; break; }
                             var row = new string?[columns];
                             for (var i = 0; i < columns; i++) row[i] = CellText(stmt, i);
                             rows.Add(row);
