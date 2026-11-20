@@ -1,0 +1,16 @@
+{
+  "id": "MhX2780.SqlData",
+  "name": "SQL & Data Analyzer",
+  "version": "1.0.0",
+  "author": "MhX2780",
+  "description": "Open or create SQLite databases, edit the tables like a sheet, run SQL, import and export CSV, see a profile of every column, and let an AI model (your own key) write SQL from a question, explain a query or an error, and analyze the data.",
+  "assembly": "SqlData.dll",
+  "apiVersion": 1,
+  "minAsdVersion": "1.0.0",
+  "glyph": "",
+  "defaultPlacement": "more",
+  "requires": {
+    "extensions": [],
+    "programs": []
+  }
+}

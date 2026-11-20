@@ -36,6 +36,9 @@ tools/build-extensions.ps1 builds everything -> dist/extensions.zip + dist/exten
 | Env & PATH Editor | Edit user environment variables and the PATH safely |
 | File Tools | Batch rename with undo, duplicate finder, folder sizes |
 | Hosts Editor | Edit the hosts file with a backup (asks for administrator permission to save) |
+| Math Solver (AI) | Solves maths step by step with the AI model you choose, and can check the answer with a second model |
+| AI Planning | Several AI models discuss your proposal on a board of cards, look for flaws, ask you questions and agree on one decision |
+| SQL & Data Analyzer | Open or create SQLite databases, edit tables, run SQL, import and export CSV, profile columns, and let an AI write, explain and analyze |
 
 To add one: copy any folder under `Extensions/MhX2780/`, rename it, change `extension.json` (new `id`, `assembly` = the project name) and write your page. The build finds it by itself.
 
