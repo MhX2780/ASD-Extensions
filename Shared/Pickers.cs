@@ -19,6 +19,16 @@ internal static class Pick
         return folder?.Path;
     }
 
+    /// <summary>A "save as" box. The file is created empty by Windows; the caller writes it.</summary>
+    public static async Task<string?> SaveAsync(string suggestedName, string extension, string typeName)
+    {
+        var picker = new Windows.Storage.Pickers.FileSavePicker { SuggestedFileName = suggestedName };
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, GetForegroundWindow());
+        picker.FileTypeChoices.Add(typeName, new List<string> { extension });
+        var file = await picker.PickSaveFileAsync();
+        return file?.Path;
+    }
+
     public static async Task<string?> FileAsync()
     {
         var picker = new Windows.Storage.Pickers.FileOpenPicker();
